@@ -29,3 +29,7 @@ venv/
 .idea/
 .vscode/
 *.swp
+
+*.png
+*.jpg
+*.npy
