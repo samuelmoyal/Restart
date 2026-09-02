@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
 
 from pose_estimation.g_dof import project_corners_local
@@ -15,6 +16,35 @@ from runway_detection.homography.plane_homography import (
 )
 from runway_detection.homography.scene_width import scene_with_runway_width
 from runway_detection.lard.projection import CORNER_NAMES
+
+
+def estimate_lateral_similarity_ty(
+    scene_true: RunwayScene,
+    pose_gt: CameraPoseLocal,
+    *,
+    runway_width_m: float,
+) -> float:
+    """
+    Lateral readout: Y translation from a 2D similarity aligning the nominal
+    runway rectangle (width ``runway_width_m``) to measured plane corners.
+
+    Unlike ``plane_y`` (threshold midpoint Y), this **does** depend on assumed
+    width — but still does not reliably recover metric cross-track offset.
+    """
+    scene_model = scene_with_runway_width(scene_true, runway_width_m)
+    pose_nom = nominal_pose_four_dof(pose_gt, scene_model)
+    h_nom = homography_from_pose(scene_model, pose_nom)
+    corners_px = project_corners_local(scene_true, pose_gt)
+    pts = np.array([corners_px[n] for n in CORNER_NAMES], dtype=np.float64)
+    meas = image_points_to_plane(pts, h_nom)
+    ref = runway_plane_xy(scene_model)
+    m, _ = cv2.estimateAffinePartial2D(
+        ref.astype(np.float32),
+        meas.astype(np.float32),
+    )
+    if m is None:
+        return float("nan")
+    return float(m[1, 2])
 
 
 def estimate_lateral_plane_y(
@@ -56,6 +86,19 @@ def estimate_lateral_center_shift(
     return float((p_nom.mean(axis=0) - p_model.mean(axis=0))[1])
 
 
+_ESTIMATORS = {
+    "plane_y": estimate_lateral_plane_y,
+    "center_shift": estimate_lateral_center_shift,
+    "similarity_ty": estimate_lateral_similarity_ty,
+}
+
+
+def _estimator(method: str):
+    if method not in _ESTIMATORS:
+        raise ValueError(f"Unknown method {method!r}; choose from {sorted(_ESTIMATORS)}")
+    return _ESTIMATORS[method]
+
+
 def fit_runway_width(
     samples: list[tuple[RunwayScene, CameraPoseLocal]],
     *,
@@ -79,9 +122,7 @@ def fit_runway_width(
     w_max = width_max_m if width_max_m is not None else 3.0 * db_width
     widths = np.linspace(w_min, w_max, n_grid)
 
-    estimator = estimate_lateral_plane_y if method == "plane_y" else estimate_lateral_center_shift
-
-    best_w = db_width
+    estimator = _estimator(method)
     best_mae = float("inf")
     for w in widths:
         preds = np.array([estimator(scene, pose, runway_width_m=w) for scene, pose in samples])
@@ -114,7 +155,7 @@ def evaluate_width(
     *,
     method: str = "plane_y",
 ) -> dict:
-    estimator = estimate_lateral_plane_y if method == "plane_y" else estimate_lateral_center_shift
+    estimator = _estimator(method)
     lat_gts = np.array([pose.lateral_offset_m for _, pose in samples])
     preds = np.array(
         [estimator(scene, pose, runway_width_m=runway_width_m) for scene, pose in samples]

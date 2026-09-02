@@ -15,6 +15,7 @@ from runway_detection.homography.measure import measure_from_image_corners
 from runway_detection.homography.plane_homography import (
     homography_from_pose,
     nominal_pose_four_dof,
+    runway_plane_xy,
 )
 from runway_detection.homography.visualize import plot_rectification
 from runway_detection.lard.loader import iter_samples, load_runways_database
@@ -64,17 +65,17 @@ def validate_homography(
 
         if output_dir is not None:
             out = output_dir / f"{sample.airport}_{sample.runway}_row{sample.row_index:05d}.png"
-        plot_rectification(
-            sample.image_path,
-            homography=h_nom,
-            corners_px=corners_px,
-            estimate=est,
-            gt_heading_deg=he_gt,
-            gt_lateral_m=lat_gt,
-            plane_roi_xy=runway_plane_xy(scene),
-            save_path=out,
-            show=show,
-        )
+            plot_rectification(
+                sample.image_path,
+                homography=h_nom,
+                corners_px=corners_px,
+                estimate=est,
+                gt_heading_deg=he_gt,
+                gt_lateral_m=lat_gt,
+                plane_roi_xy=runway_plane_xy(scene),
+                save_path=out,
+                show=show,
+            )
 
         if len(results) >= max_samples:
             break

@@ -51,7 +51,7 @@ def main() -> None:
     parser.add_argument("--airport", default="CYEG")
     parser.add_argument("--runway", default="20")
     parser.add_argument("--train-frac", type=float, default=0.7)
-    parser.add_argument("--method", choices=("plane_y", "center_shift"), default="plane_y")
+    parser.add_argument("--method", choices=("plane_y", "center_shift", "similarity_ty"), default="similarity_ty")
     parser.add_argument("--output-dir", type=Path, default=Path("data/LARD/homography_overlays"))
     parser.add_argument("--save-viz", action="store_true")
     args = parser.parse_args()
@@ -75,6 +75,8 @@ def main() -> None:
           f"height, pitch, roll from CSV")
     print(f"\nDB width:     {fit['db_width_m']:.1f} m")
     print(f"Fitted width: {fit['fitted_width_m']:.1f} m  (scale {fit['width_scale']:.3f})")
+    odd_ok = 0.5 <= fit["width_scale"] <= 2.0
+    print(f"ODD sanity (0.5×–2× DB): {'OK' if odd_ok else 'FAIL — fitted width not plausible'}")
     print(f"Train MAE lateral: DB={fit['train_mae_db_width_m']:.1f}m → fitted={fit['train_mae_m']:.1f}m")
     print(f"Test  MAE lateral: DB={eval_test_db['mae_m']:.1f}m → fitted={eval_test_fit['mae_m']:.1f}m")
     print(f"Test RMSE: {eval_test_fit['rmse_m']:.1f}m")

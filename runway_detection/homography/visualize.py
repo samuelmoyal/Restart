@@ -12,9 +12,7 @@ from PIL import Image
 from runway_detection.homography.measure import PlanePoseEstimate
 from runway_detection.homography.plane_homography import (
     PlaneHomography,
-    homography_from_pose,
-    nominal_pose_four_dof,
-    runway_plane_xy,
+    image_points_to_plane,
     warp_image_to_plane,
 )
 from runway_detection.lard.projection import CORNER_NAMES
@@ -50,11 +48,16 @@ def plot_rectification(
     if bgr is None:
         raise FileNotFoundError(image_path)
     rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    corner_pts = np.array([corners_px[n] for n in CORNER_NAMES], dtype=np.float64)
+    roi_xy = plane_roi_xy
+    if roi_xy is None:
+        roi_xy = image_points_to_plane(corner_pts, homography)
     warped, _ = warp_image_to_plane(
         bgr,
         homography,
-        plane_roi_xy=plane_roi_xy,
-        meters_per_pixel=2.0,
+        plane_roi_xy=roi_xy,
+        margin_m=200.0,
+        meters_per_pixel=1.5,
     )
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 5))

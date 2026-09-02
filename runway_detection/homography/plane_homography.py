@@ -16,6 +16,7 @@ import numpy as np
 
 from pose_estimation.g_dof import project_corners_local
 from pose_estimation.runway_model import CameraPoseLocal, RunwayScene
+from runway_detection.homography.heading import heading_error_ground_deg
 from runway_detection.lard.projection import CORNER_NAMES
 
 
@@ -72,6 +73,59 @@ def nominal_pose_four_dof(pose_gt: CameraPoseLocal, scene: RunwayScene) -> Camer
     )
 
 
+def nominal_pose_with_prior(
+    pose_gt: CameraPoseLocal,
+    scene: RunwayScene,
+    *,
+    delta_he_deg: float = 0.0,
+    delta_lat_m: float = 0.0,
+) -> CameraPoseLocal:
+    """
+  Prior pose for warm-started homography (simulates t-1 estimates).
+
+  Keeps the four known DOF from the current frame; perturbs heading error and
+  lateral offset by ``delta_*`` relative to GT (positive delta = prior is
+  right-of / clockwise of truth in the same sign convention as GT pose fields).
+  """
+    he_gt = heading_error_ground_deg(pose_gt, scene)
+    he_prior = he_gt + delta_he_deg
+    # Small-angle: decrease yaw_cam to increase HE in the ground frame.
+    yaw_prior = pose_gt.yaw_cam_deg - (he_prior - he_gt)
+    return CameraPoseLocal(
+        along_track_m=pose_gt.along_track_m,
+        lateral_offset_m=pose_gt.lateral_offset_m + delta_lat_m,
+        height_m=pose_gt.height_m,
+        yaw_cam_deg=yaw_prior,
+        pitch_cam_deg=pose_gt.pitch_cam_deg,
+        roll_cam_deg=pose_gt.roll_cam_deg,
+    )
+
+
+def pose_with_he_lat(
+    pose_four_dof: CameraPoseLocal,
+    scene: RunwayScene,
+    *,
+    heading_error_deg: float,
+    lateral_offset_m: float,
+    yaw_reference: CameraPoseLocal,
+) -> CameraPoseLocal:
+    """
+    Build a full 6-DOF pose from known 4-DOF instruments + estimated HE / lateral.
+
+    ``yaw_reference`` supplies the yaw↔HE calibration for the current frame (typically GT).
+    """
+    he_ref = heading_error_ground_deg(yaw_reference, scene)
+    yaw_cam = yaw_reference.yaw_cam_deg - (heading_error_deg - he_ref)
+    return CameraPoseLocal(
+        along_track_m=pose_four_dof.along_track_m,
+        lateral_offset_m=lateral_offset_m,
+        height_m=pose_four_dof.height_m,
+        yaw_cam_deg=yaw_cam,
+        pitch_cam_deg=pose_four_dof.pitch_cam_deg,
+        roll_cam_deg=pose_four_dof.roll_cam_deg,
+    )
+
+
 def intrinsic_yaw_deg(pose: CameraPoseLocal, scene: RunwayScene) -> float:
     """First LARD intrinsic rotation component (degrees) — proxy for heading error."""
     return scene.runway_azimuth_deg - pose.yaw_cam_deg
@@ -110,7 +164,8 @@ def warp_image_to_plane(
         [[scale, 0, -x0 * scale], [0, -scale, y1 * scale], [0, 0, 1]],
         dtype=np.float64,
     )
-    out_to_image = homography.plane_to_image @ np.linalg.inv(plane_to_out)
+    # warpPerspective maps destination pixels → source image; use plane→out then out→image⁻¹.
+    out_to_image = plane_to_out @ homography.image_to_plane
 
     warped = cv2.warpPerspective(
         image,

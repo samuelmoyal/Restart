@@ -37,8 +37,9 @@ def measure_from_corners_plane(plane_corners: np.ndarray) -> PlanePoseEstimate:
     ``plane_corners``: (4, 2) ordered TR, TL, BL, BR.
 
     - ``heading_error_deg``: angle of centerline vs +X (along-runway) axis.
-    - ``lateral_offset_m``: Y of threshold midpoint in the nominal plane frame
-      (experimental — does **not** equal metric cross-track offset; see README).
+    - ``lateral_offset_m``: Y of threshold midpoint in the prior plane frame.
+      Apply :func:`runway_detection.homography.readout.correct_plane_residuals`
+      before using as metric cross-track (removes ``tan(HE) * along_track`` coupling).
     """
     tr, tl, bl, br = plane_corners
     far_mid = 0.5 * (tr + tl)
