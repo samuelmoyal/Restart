@@ -1,5 +1,5 @@
 """
-Mask-space pose optimization: coarse grid + Levenberg-Marquardt refinement.
+Mask-space pose optimization: coarse grid + local refinement (LM or GD).
 
 Minimizes a mask distance metric between an observed (soft) mask Y and
 g_dof(yaw, lateral_offset) inside an ROI (spec §4.3–§4.4).
@@ -8,8 +8,11 @@ g_dof(yaw, lateral_offset) inside an ROI (spec §4.3–§4.4).
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
+
+RefineMethod = Literal["lm", "gd"]
 
 from pose_estimation.g_dof import GDofParams, GDofState, g_dof
 from pose_estimation.metrics import MaskMetric, metric_value, residuals_l2, soft_dice
@@ -34,6 +37,11 @@ class PoseEstimate:
     n_refine_iters: int = 0
     converged: bool = False
     search_mode: str = "single"
+    refine_method: RefineMethod = "lm"
+    refine_trace: list[GDofState] | None = None
+    covariance: object | None = None  # PoseCovariance when computed
+    state_coarse: GDofState | None = None  # grid winner before refine
+    seed_search: object | None = None  # SeedSearchResult when relocation ran
 
 
 @dataclass(frozen=True)
@@ -53,6 +61,14 @@ DEFAULT_COARSE_LEVELS: tuple[CoarseLevel, ...] = (
     CoarseLevel(0.5, 2.5, 0.125, 0.625),
 )
 
+# Narrow → wide warm-start around t-1 (hierarchical beam search; see hierarchical_coarse_search).
+WARM_START_COARSE_LEVELS: tuple[CoarseLevel, ...] = (
+    CoarseLevel(5.0, 25.0, 0.5, 2.5),
+    CoarseLevel(1.0, 5.0, 0.125, 0.5),
+    CoarseLevel(0.25, 1.25, 0.0625, 0.3125),
+    CoarseLevel(0.0625, 0.3125, 0.03125, 0.15625),
+)
+
 
 @dataclass
 class OptimizerConfig:
@@ -66,6 +82,7 @@ class OptimizerConfig:
     coarse_levels: tuple[CoarseLevel, ...] = DEFAULT_COARSE_LEVELS
     beam_top_k: int = 3
     render_blur_sigma: float = 1.5
+    refine_method: RefineMethod = "lm"
     max_refine_iters: int = 12
     cost_tol: float = 1e-6
     step_tol_deg: float = 0.005
@@ -73,8 +90,17 @@ class OptimizerConfig:
     lm_lambda_init: float = 1e-2
     lm_lambda_up: float = 10.0
     lm_lambda_down: float = 0.3
+    lm_min_cost_drop: float = 0.03  # stop when one accepted LM step reduces L2 by less than this
+    gd_lr_init: float = 1.0
+    gd_lr_min: float = 1e-4
+    gd_max_line_search: int = 12
+    gd_step_yaw_scale: float = 80.0  # multiplies ∂cost/∂yaw → step in degrees
+    gd_step_lat_scale: float = 200.0  # multiplies ∂cost/∂lat → step in meters
+    gd_fd_eps_yaw_deg: float = 0.1
+    gd_fd_eps_lat_m: float = 1.0
     fd_eps_yaw_deg: float = 0.02
     fd_eps_lateral_m: float = 0.05
+    measurement_sigma: float = 0.15  # per-pixel std on downsampled mask [0,1]
 
 
 @dataclass
@@ -274,17 +300,41 @@ def _jacobian_fd(
     return j
 
 
+def _cost_gradient_fd(
+    ctx: _EvalContext,
+    state: GDofState,
+    *,
+    eps_yaw_deg: float,
+    eps_lat_m: float,
+) -> np.ndarray:
+    """Central FD of scalar L2 cost (more stable than Jᵀr on rasterized masks)."""
+    c_yaw_p = ctx.cost(GDofState(state.yaw_cam_deg + eps_yaw_deg, state.lateral_offset_m))
+    c_yaw_m = ctx.cost(GDofState(state.yaw_cam_deg - eps_yaw_deg, state.lateral_offset_m))
+    c_lat_p = ctx.cost(GDofState(state.yaw_cam_deg, state.lateral_offset_m + eps_lat_m))
+    c_lat_m = ctx.cost(GDofState(state.yaw_cam_deg, state.lateral_offset_m - eps_lat_m))
+    return np.array(
+        [
+            (c_yaw_p - c_yaw_m) / (2.0 * eps_yaw_deg),
+            (c_lat_p - c_lat_m) / (2.0 * eps_lat_m),
+        ],
+        dtype=float,
+    )
+
+
 def refine_lm(
     ctx: _EvalContext,
     init: GDofState,
     *,
     config: OptimizerConfig,
+    trace: list[GDofState] | None = None,
 ) -> tuple[GDofState, float, int, bool]:
     x = _state_vec(init)
     lam = config.lm_lambda_init
     cost = ctx.cost(init)
     n_iters = 0
     converged = False
+    if trace is not None:
+        trace.append(init)
 
     for _ in range(config.max_refine_iters):
         state = _state_from_vec(x)
@@ -304,7 +354,6 @@ def refine_lm(
 
         jtj = j.T @ j
         g = j.T @ r
-        n_iters += 1
 
         accepted = False
         for _attempt in range(8):
@@ -324,16 +373,27 @@ def refine_lm(
                 continue
 
             if cost_new < cost:
+                cost_drop = cost - cost_new
                 step_yaw = abs(delta[0])
                 step_lat = abs(delta[1])
                 x = x_new
-                if cost - cost_new < config.cost_tol and step_yaw < config.step_tol_deg and step_lat < config.step_tol_m:
-                    converged = True
                 cost = cost_new
                 lam = max(lam * config.lm_lambda_down, 1e-12)
                 accepted = True
-                if converged:
-                    return _state_from_vec(x), cost, n_iters, converged
+                n_iters += 1
+                state_new = _state_from_vec(x)
+                if trace is not None:
+                    trace.append(state_new)
+                if (
+                    cost_drop < config.lm_min_cost_drop
+                    or (
+                        cost_drop < config.cost_tol
+                        and step_yaw < config.step_tol_deg
+                        and step_lat < config.step_tol_m
+                    )
+                ):
+                    converged = True
+                    return state_new, cost, n_iters, converged
                 break
             lam *= config.lm_lambda_up
 
@@ -341,6 +401,103 @@ def refine_lm(
             break
 
     return _state_from_vec(x), cost, n_iters, converged
+
+
+def refine_gd(
+    ctx: _EvalContext,
+    init: GDofState,
+    *,
+    config: OptimizerConfig,
+    trace: list[GDofState] | None = None,
+) -> tuple[GDofState, float, int, bool]:
+    """
+    Preconditioned gradient descent on L2 mask cost.
+
+    Uses diagonal curvature scaling from ``J^T J`` and backtracking line search
+    to handle the elongated (yaw, lateral) bowl.
+    """
+    x = _state_vec(init)
+    cost = ctx.cost(init)
+    n_iters = 0
+    converged = False
+    if trace is not None:
+        trace.append(init)
+
+    for _ in range(config.max_refine_iters):
+        state = _state_from_vec(x)
+        try:
+            grad = _cost_gradient_fd(
+                ctx,
+                state,
+                eps_yaw_deg=config.gd_fd_eps_yaw_deg,
+                eps_lat_m=config.gd_fd_eps_lat_m,
+            )
+        except (ValueError, FloatingPointError):
+            break
+
+        if not np.all(np.isfinite(grad)):
+            break
+        if float(np.linalg.norm(grad)) < 1e-14:
+            break
+
+        direction = np.array(
+            [
+                config.gd_step_yaw_scale * grad[0],
+                config.gd_step_lat_scale * grad[1],
+            ],
+            dtype=float,
+        )
+
+        accepted = False
+        alpha = config.gd_lr_init
+        for _attempt in range(config.gd_max_line_search):
+            if alpha < config.gd_lr_min:
+                break
+            x_new = x - alpha * direction
+            state_new = _state_from_vec(x_new)
+            try:
+                cost_new = ctx.cost(state_new)
+            except (ValueError, FloatingPointError):
+                alpha *= 0.5
+                continue
+
+            if cost_new < cost - 1e-10:
+                step_yaw = abs(x_new[0] - x[0])
+                step_lat = abs(x_new[1] - x[1])
+                cost_drop = cost - cost_new
+                x = x_new
+                cost = cost_new
+                n_iters += 1
+                accepted = True
+                state_new = _state_from_vec(x)
+                if trace is not None:
+                    trace.append(state_new)
+                if (
+                    cost_drop < config.cost_tol
+                    and step_yaw < config.step_tol_deg
+                    and step_lat < config.step_tol_m
+                ):
+                    converged = True
+                    return state_new, cost, n_iters, converged
+                break
+            alpha *= 0.5
+
+        if not accepted:
+            break
+
+    return _state_from_vec(x), cost, n_iters, converged
+
+
+def refine_pose(
+    ctx: _EvalContext,
+    init: GDofState,
+    *,
+    config: OptimizerConfig,
+    trace: list[GDofState] | None = None,
+) -> tuple[GDofState, float, int, bool]:
+    if config.refine_method == "gd":
+        return refine_gd(ctx, init, config=config, trace=trace)
+    return refine_lm(ctx, init, config=config, trace=trace)
 
 
 def build_context(
@@ -389,20 +546,35 @@ def estimate_pose_mask_space(
     use_coarse: bool = True,
     roi: ROIBox | None = None,
     search_center: GDofState | None = None,
+    record_refine_trace: bool = False,
+    P_pred: np.ndarray | None = None,
+    compute_covariance: bool = True,
+    relocate_invalid_seed: bool = True,
 ) -> PoseEstimate:
     """
     Estimate (yaw, lateral_offset) from an observed soft mask.
 
-    Pipeline: coarse search (single grid or coarse-to-fine beam) → LM.
+    Pipeline: coarse search (single grid or coarse-to-fine beam) → refine.
 
     ``init`` seeds ROI union; ``search_center`` anchors the hierarchical search
-    (defaults to ``init``). LM starts from the coarse winner, not from ``init``.
+    (defaults to ``init``). Refinement starts from the coarse winner, not ``init``.
     """
     config = config or OptimizerConfig()
     center = search_center or init
     ctx = build_context(scene, params, observed, config=config, roi=roi, init=init)
 
-    state = init
+    seed_info = None
+    if relocate_invalid_seed:
+        from pose_estimation.seed_search import find_valid_seed_expanding_rings, has_mask_overlap
+
+        if not has_mask_overlap(ctx, center):
+            seed_info = find_valid_seed_expanding_rings(ctx, center)
+            if seed_info.relocated:
+                center = seed_info.seed
+                init = seed_info.seed
+                ctx = build_context(scene, params, observed, config=config, roi=None, init=init)
+
+    state = center if use_coarse else init
     n_coarse = 0
     mode = config.search_mode
     if use_coarse:
@@ -422,8 +594,19 @@ def estimate_pose_mask_space(
                 lateral_step_m=config.coarse_lateral_step_m,
             )
             mode = "single"
+    else:
+        mode = "refine_only"
 
-    state, cost, n_refine, converged = refine_lm(ctx, state, config=config)
+    state_coarse = state
+    trace: list[GDofState] | None = [] if record_refine_trace else None
+    state, cost, n_refine, converged = refine_pose(ctx, state, config=config, trace=trace)
+
+    cov = None
+    if compute_covariance:
+        from pose_estimation.covariance import compute_pose_covariance, default_prior_covariance
+
+        P_prior = P_pred if P_pred is not None else default_prior_covariance()
+        cov = compute_pose_covariance(ctx, state, P_pred=P_prior, config=config)
 
     pred = ctx.render_downsampled(state)
     obs = ctx.observed_downsampled()
@@ -437,4 +620,9 @@ def estimate_pose_mask_space(
         n_refine_iters=n_refine,
         converged=converged,
         search_mode=mode,
+        refine_method=config.refine_method,
+        refine_trace=trace,
+        covariance=cov,
+        state_coarse=state_coarse,
+        seed_search=seed_info,
     )
