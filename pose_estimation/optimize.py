@@ -7,6 +7,7 @@ g_dof(yaw, lateral_offset) inside an ROI (spec §4.3–§4.4).
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Literal
 
@@ -101,6 +102,12 @@ class OptimizerConfig:
     fd_eps_yaw_deg: float = 0.02
     fd_eps_lateral_m: float = 0.05
     measurement_sigma: float = 0.15  # per-pixel std on downsampled mask [0,1]
+    # "raster": full-res fillPoly → crop → blur → area downsample (original path).
+    #   Piecewise-constant in (yaw, lat): FD Jacobians vanish for sub-pixel steps.
+    # "analytic": per-pixel coverage of the projected quad on the downsampled ROI
+    #   grid from signed edge distances (Gaussian-CDF edge profile). Smooth in
+    #   (yaw, lat), so LM / Fisher information see sub-pixel motion; ~10× faster.
+    renderer: str = "raster"
 
 
 @dataclass
@@ -112,6 +119,8 @@ class _EvalContext:
     ds_size: int
     metric: MaskMetric
     render_blur_sigma: float = 0.0
+    renderer: str = "raster"
+    _obs_ds: np.ndarray | None = None
 
     def render_patch(self, state: GDofState) -> np.ndarray:
         import cv2
@@ -123,11 +132,52 @@ class _EvalContext:
         return patch
 
     def render_downsampled(self, state: GDofState) -> np.ndarray:
+        if self.renderer == "analytic":
+            return self._render_analytic(state)
         return downsample_mask(self.render_patch(state), self.ds_size)
 
+    def _render_analytic(self, state: GDofState) -> np.ndarray:
+        """
+        Soft quad coverage on the (ds × ds) ROI grid.
+
+        Coverage = Π_edges Φ(d_k / σ) with d_k the signed distance (full-res px,
+        + inside) from each downsampled pixel center to edge k, and
+        σ² = blur² + (pixel footprint)²/12 (box-filter variance of the area
+        downsample). Exact away from corners; the quad must be convex.
+        """
+        from pose_estimation.g_dof import corners_dict_to_polygon, g_dof_corners
+
+        corners = corners_dict_to_polygon(g_dof_corners(self.scene, self.params, state))
+        n = self.ds_size
+        step_x = self.roi.width / n
+        step_y = self.roi.height / n
+        # Full-res pixel (i, j) covers [i, i+1); ds pixel centers in the same frame.
+        xs = self.roi.x0 + (np.arange(n) + 0.5) * step_x - 0.5
+        ys = self.roi.y0 + (np.arange(n) + 0.5) * step_y - 0.5
+        gx, gy = np.meshgrid(xs, ys)
+        sigma = math.sqrt(self.render_blur_sigma**2 + (step_x * step_y) / 12.0 + 1.0 / 12.0)
+        area2 = float(
+            np.sum(corners[:, 0] * np.roll(corners[:, 1], -1) - np.roll(corners[:, 0], -1) * corners[:, 1])
+        )
+        orient = 1.0 if area2 > 0 else -1.0
+        cov = np.ones((n, n), dtype=np.float64)
+        for k in range(4):
+            p = corners[k]
+            q = corners[(k + 1) % 4]
+            e = q - p
+            length = math.hypot(float(e[0]), float(e[1]))
+            if length < 1e-9:
+                continue
+            # cross(e, g − p) > 0 on the interior side of a positively oriented polygon.
+            d = orient * (e[0] * (gy - p[1]) - e[1] * (gx - p[0])) / length
+            cov *= _gauss_cdf(d / sigma)
+        return cov.astype(np.float32)
+
     def observed_downsampled(self) -> np.ndarray:
-        patch = self.roi.crop(self.observed).astype(np.float32)
-        return downsample_mask(patch, self.ds_size)
+        if self._obs_ds is None:
+            patch = self.roi.crop(self.observed).astype(np.float32)
+            self._obs_ds = downsample_mask(patch, self.ds_size)
+        return self._obs_ds
 
     def cost(self, state: GDofState) -> float:
         pred = self.render_downsampled(state)
@@ -136,6 +186,11 @@ class _EvalContext:
 
     def residuals(self, state: GDofState) -> np.ndarray:
         return residuals_l2(self.observed_downsampled(), self.render_downsampled(state))
+
+
+def _gauss_cdf(x: np.ndarray) -> np.ndarray:
+    """Standard normal CDF (tanh approximation, |err| < 2e-4)."""
+    return 0.5 * (1.0 + np.tanh(0.7978845608 * (x + 0.044715 * x**3)))
 
 
 def _state_vec(state: GDofState) -> np.ndarray:
@@ -532,6 +587,7 @@ def build_context(
         ds_size=config.downsample_size,
         metric=config.metric,
         render_blur_sigma=config.render_blur_sigma,
+        renderer=config.renderer,
     )
 
 
