@@ -33,3 +33,7 @@ venv/
 *.png
 *.jpg
 *.npy
+# XP12 dataset (extracted metadata, caches, results)
+xp12_dataset.zip
+data/xp12/**
+!data/xp12/calibration.json
