@@ -55,3 +55,10 @@ Copy [`configs/data.example.yaml`](configs/data.example.yaml) and point paths at
 ## Legacy notebooks
 
 Original Colab / server notebooks are archived under [`notebooks/legacy/`](notebooks/legacy/) (not the source of truth).
+
+## Evaluation on X-Plane 12 videos
+
+Systematic ablation of the (yaw, lateral) estimators on 118 XP12 approaches:
+see [`evaluation/README.md`](evaluation/README.md) (pipeline, commands) and the
+generated `data/xp12/results/REPORT.md` (tables, figures, key findings).
+Replay videos: `scripts/render_xp12_video.py`.
