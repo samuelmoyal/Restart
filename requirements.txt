@@ -16,3 +16,9 @@ torch>=2.1
 
 # Evaluation (XP12 ablations)
 pandas>=2.0
+
+# Sim-to-real restyling (scripts/restyle_xp12_controlnet.py)
+diffusers>=0.30
+transformers>=4.40
+accelerate>=0.30
+safetensors>=0.4
