@@ -37,3 +37,9 @@ venv/
 xp12_dataset.zip
 data/xp12/**
 !data/xp12/calibration.json
+
+# Real landing footage (licensed for private use only, never commit)
+data/hpa/**
+!data/hpa/annotations.json
+!data/hpa/videos.json
+data/LARD_real/
