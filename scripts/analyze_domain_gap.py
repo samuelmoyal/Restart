@@ -92,8 +92,10 @@ def logreg_auc(Xtr, ytr, Xte, yte, l2: float = 1e-2, iters: int = 400) -> float:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--real", type=Path, default=Path("data/hpa/real_720p"))
+    ap.add_argument("--real", nargs="+", default=["real=data/hpa/real_720p"],
+                    help="one or more name=directory real sets (directory/<video>/<image>.jpg)")
     ap.add_argument("--sim-zip", type=Path, default=Path("data/xp12/xp12_sim2real_subset.zip"))
+    ap.add_argument("--sim-flights", type=Path, help="sampled xp12_flights root (scripts/sample_xp12_flights.py)")
     ap.add_argument("--n", type=int, default=1200)
     ap.add_argument("--weights", type=Path, default=Path("weights/best.pt"))
     ap.add_argument("--out", type=Path, default=Path("data/hpa/domain_gap"))
@@ -130,45 +132,79 @@ def main() -> None:
             e = e.pooler_output if hasattr(e, "pooler_output") else e
         return d, (e / e.norm(dim=-1, keepdim=True)).numpy()[0]
 
-    rows, embs, thumbs = [], [], {"sim_full": [], "sim_crop": [], "real": []}
+    real_sets = dict(r.split("=", 1) for r in args.real)
+    rows, embs, thumbs = [], [], {"sim_full": [], "sim_crop": [], **{k: [] for k in real_sets}}
 
-    # ---- real: balanced over videos
-    by_video: dict[str, list[Path]] = {}
-    for f in sorted(args.real.glob("*/*.jpg")):
-        by_video.setdefault(f.parent.name, []).append(f)
-    per = max(1, args.n // len(by_video))
-    for vid, files in by_video.items():
-        for f in rng.choice(files, size=min(per, len(files)), replace=False):
-            im = cv2.imread(str(f))
-            d, e = describe(im, im.shape[1])
-            rows.append({"domain": "real", "group": vid, **d})
-            embs.append(e)
-            if len(thumbs["real"]) < 48 and rng.random() < 0.06:
-                thumbs["real"].append(cv2.resize(im, (320, 180)))
-    print("real done", len(rows), flush=True)
-
-    # ---- sim: full frame and runway-centred crop
-    with zipfile.ZipFile(args.sim_zip) as z:
-        labels = json.loads(z.read("labels.json"))
-        names = rng.choice(sorted(labels), size=min(args.n, len(labels)), replace=False)
-        for name in names:
-            im = cv2.imdecode(np.frombuffer(z.read(f"images/{name}.jpg"), np.uint8), cv2.IMREAD_COLOR)
-            H, W = im.shape[:2]
-            q = np.array(labels[name]["corners_TR_TL_BL_BR"])
-            bw, bh = np.ptp(q[:, 0]), np.ptp(q[:, 1])
-            cx, cy = q[:, 0].mean(), q[:, 1].mean()
-            zoom = rng.uniform(2.5, 7.0)
-            w = float(np.clip(zoom * max(bw, bh * 16 / 9), 240, W))
-            h = w * 9 / 16
-            x = float(np.clip(cx - w / 2 + rng.uniform(-0.15, 0.15) * w, 0, W - w))
-            y = float(np.clip(cy - h / 2 + rng.uniform(-0.15, 0.15) * h, 0, H - h))
-            crop = im[int(y):int(y + h), int(x):int(x + w)]
-            for dom, img, sw in (("sim_full", im, W), ("sim_crop", crop, crop.shape[1])):
-                d, e = describe(img, sw)
-                rows.append({"domain": dom, "group": name.split("_")[0], "along_m": labels[name]["along_m"], **d})
+    # ---- real sets: balanced over videos
+    n_videos = {}
+    for rname, rdir in real_sets.items():
+        by_video: dict[str, list[Path]] = {}
+        for f in sorted(Path(rdir).glob("*/*.jpg")):
+            by_video.setdefault(f.parent.name, []).append(f)
+        n_videos[rname] = len(by_video)
+        per = max(1, args.n // len(by_video))
+        for vid, files in by_video.items():
+            for f in rng.choice(files, size=min(per, len(files)), replace=False):
+                im = cv2.imread(str(f))
+                d, e = describe(im, im.shape[1])
+                rows.append({"domain": rname, "group": f"{rname}:{vid}", **d})
                 embs.append(e)
-                if len(thumbs[dom]) < 48 and rng.random() < 0.05:
-                    thumbs[dom].append(cv2.resize(img, (320, 180)))
+                if len(thumbs[rname]) < 48 and rng.random() < 48 / min(args.n, per * len(by_video)):
+                    thumbs[rname].append(cv2.resize(im, (320, 180)))
+        print(rname, "done", len(rows), flush=True)
+
+    # ---- sim: full frame and runway-centred crops
+    def _window(im, cx, cy, w, cy_frac):
+        H, W = im.shape[:2]
+        h = w * 9 / 16
+        x = float(np.clip(cx - w / 2 + rng.uniform(-0.12, 0.12) * w, 0, W - w))
+        y = float(np.clip(cy - cy_frac * h + rng.uniform(-0.08, 0.08) * h, 0, H - h))
+        return im[int(y):int(y + h), int(x):int(x + w)]
+
+    def add_sim(im, q, group, along):
+        """``q``: (4, 2) runway corners in pixels. Adds the full frame and two crops."""
+        W = im.shape[1]
+        bw, bh = np.ptp(q[:, 0]), np.ptp(q[:, 1])
+        cx, cy = q[:, 0].mean(), q[:, 1].mean()
+        variants = [("sim_full", im)]
+        # loose crop: random zoom whatever the runway size (upscaled when the runway is small)
+        w = float(np.clip(rng.uniform(2.5, 7.0) * max(bw, bh * 16 / 9), 240, W))
+        variants.append(("sim_crop", _window(im, cx, cy, w, 0.5)))
+        # matched crop: runway width fraction drawn like the real clips, only if it needs no upscaling
+        f = rng.uniform(0.08, 0.35)
+        if bw / f >= 480:
+            variants.append(("sim_matched", _window(im, cx, cy, min(bw / f, W), 0.57)))
+        for dname, img in variants:
+            d, e = describe(img, img.shape[1])
+            rows.append({"domain": dname, "group": "sim:" + group, "along_m": along, **d})
+            embs.append(e)
+            if len(thumbs.setdefault(dname, [])) < 48 and rng.random() < 0.08:
+                thumbs[dname].append(cv2.resize(img, (320, 180)))
+
+    if args.sim_flights:
+        from evaluation.weather import remove_hud
+
+        meta = []
+        for ep_dir in sorted(Path(args.sim_flights).glob("*/*")):
+            for f in ep_dir.glob("images/*.jpg"):
+                c = np.array((ep_dir / "corners" / f"{f.stem}.txt").read_text().split(), float).reshape(4, 3)
+                x = float((ep_dir / "position" / f"{f.stem}.txt").read_text().split()[0])
+                if c[:, 2].sum() == 4 and x < 0:
+                    meta.append((ep_dir, f, c[:, :2], -x))
+        # half of the budget from the last 600 m, where the runway is as large as in real clips
+        near = [m for m in meta if m[3] < 600]
+        far = [m for m in meta if m[3] >= 600]
+        pick = [near[i] for i in rng.choice(len(near), size=min(args.n // 2, len(near)), replace=False)]
+        pick += [far[i] for i in rng.choice(len(far), size=min(args.n - len(pick), len(far)), replace=False)]
+        for ep_dir, f, c, along in pick:
+            im = remove_hud(cv2.imread(str(f)))
+            add_sim(im, c * [im.shape[1], im.shape[0]], f"{ep_dir.parent.name}/{ep_dir.name}", along)
+    else:
+        with zipfile.ZipFile(args.sim_zip) as z:
+            labels = json.loads(z.read("labels.json"))
+            for name in rng.choice(sorted(labels), size=min(args.n, len(labels)), replace=False):
+                im = cv2.imdecode(np.frombuffer(z.read(f"images/{name}.jpg"), np.uint8), cv2.IMREAD_COLOR)
+                add_sim(im, np.array(labels[name]["corners_TR_TL_BL_BR"]), name.split("_")[0], labels[name]["along_m"])
     print("sim done", len(rows), flush=True)
 
     E = np.array(embs)
@@ -192,35 +228,37 @@ def main() -> None:
         print(*a)
         print(*a, file=out)
 
-    say(f"images: real={np.sum(dom == 'real')} ({len(by_video)} videos)  sim={np.sum(dom == 'sim_full')}")
     night = X[:, cols.index("dark_frac")] > 0.5
-    say(f"night frames (>50 % dark pixels): real {night[dom == 'real'].mean():.1%}  sim {night[dom == 'sim_full'].mean():.1%}")
-    for sim in ("sim_full", "sim_crop"):
-        say(f"\n=== real vs {sim} ===")
-        say(f"{'feature':18s} {'real med [IQR]':>24s} {'sim med [IQR]':>24s} {'AUC':>6s} {'AUC day':>8s}")
-        a, b = dom == "real", dom == sim
-        res = []
-        for j, c in enumerate(cols):
-            ra, sb = X[a, j], X[b, j]
-            u = auc(ra, sb)
-            ud = auc(X[a & ~night, j], X[b & ~night, j])
-            res.append((abs(u - 0.5), c, ra, sb, u, ud))
-        for _, c, ra, sb, u, ud in sorted(res, reverse=True):
-            q = lambda v: f"{np.median(v):8.3g} [{np.percentile(v, 25):.3g}, {np.percentile(v, 75):.3g}]"
-            say(f"{c:18s} {q(ra):>24s} {q(sb):>24s} {u:6.2f} {ud:8.2f}")
-        # probes with a split by video / sequence
+    say("images per domain: " + ", ".join(f"{d}={np.sum(dom == d)}" for d in list(real_sets) + ["sim_full", "sim_crop", "sim_matched"]))
+    say("videos per real set: " + ", ".join(f"{k}={v}" for k, v in n_videos.items()))
+    say("\nmedian per domain")
+    sims = [d for d in ("sim_matched", "sim_crop", "sim_full") if np.any(dom == d)]
+    doms = list(real_sets) + sims
+    say(f"{'feature':18s}" + "".join(f"{d:>12s}" for d in doms))
+    for j, c in enumerate(cols):
+        say(f"{c:18s}" + "".join(f"{np.median(X[dom == d, j]):12.3g}" for d in doms))
+    say(f"{'night share':18s}" + "".join(f"{night[dom == d].mean():12.1%}" for d in doms))
+
+    pairs = [(r, sim) for r in real_sets for sim in sims]
+    names = list(real_sets)
+    pairs += [(names[i], names[j]) for i in range(len(names)) for j in range(i + 1, len(names))]
+    for pos, neg in pairs:
+        a, b = dom == pos, dom == neg
+        say(f"\n=== {pos} vs {neg} ===")
+        res = sorted(((abs(auc(X[a, j], X[b, j]) - 0.5), c, auc(X[a, j], X[b, j])) for j, c in enumerate(cols)), reverse=True)
+        say("most separating single features (AUC, 0.5 = same): " + ", ".join(f"{c} {u:.2f}" for _, c, u in res[:6]))
         groups = np.unique(grp[a | b])
-        test_groups = set(groups[rng.permutation(len(groups))[: len(groups) // 3]])
+        test_groups = set(groups[rng.permutation(len(groups))[: max(1, len(groups) // 3)]])
         te = np.array([g in test_groups for g in grp])
         y = a.astype(float)
-        say("logistic-regression probes (held-out videos / sequences), AUC all / day-only:")
-        for name, feats in list(GROUPS.items()) + [("all hand-crafted", cols), ("CLIP embedding", None)]:
+        line = []
+        for name, feats in list(GROUPS.items()) + [("all hand-crafted", cols), ("CLIP", None)]:
             M = E if feats is None else X[:, [cols.index(f) for f in feats]]
-            vals = []
-            for keep in (np.ones(len(y), bool), ~night):
-                m = (a | b) & keep
-                vals.append(logreg_auc(M[m & ~te], y[m & ~te], M[m & te], y[m & te]))
-            say(f"  {name:24s} {vals[0]:.3f} / {vals[1]:.3f}")
+            m = a | b
+            if len(np.unique(y[m & te])) < 2 or len(np.unique(y[m & ~te])) < 2:
+                continue
+            line.append(f"{name} {logreg_auc(M[m & ~te], y[m & ~te], M[m & te], y[m & te]):.2f}")
+        say("probe AUC on held-out videos: " + " | ".join(line))
     (args.out / "report.txt").write_text(out.getvalue())
     print(f"→ {args.out}")
 

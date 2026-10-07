@@ -43,3 +43,4 @@ data/hpa/**
 !data/hpa/annotations.json
 !data/hpa/videos.json
 data/LARD_real/
+data/xp12_flights/

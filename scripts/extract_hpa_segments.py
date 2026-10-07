@@ -57,6 +57,8 @@ def main() -> None:
     ap.add_argument("--out", type=Path, default=OUT)
     ap.add_argument("--max-width", type=int, default=1280)
     ap.add_argument("--min-seconds", type=float, default=1.5, help="skip shorter segments")
+    ap.add_argument("--title", help="only videos whose title matches this regex (e.g. '^\\[PL\\]')")
+    ap.add_argument("--not-title", help="skip videos whose title matches this regex")
     args = ap.parse_args()
 
     ann = json.loads((ROOT / "annotations.json").read_text())
@@ -66,6 +68,11 @@ def main() -> None:
     rows = []
     todo = [(vid, k, s) for vid, a in ann.items() for k, s in enumerate(a.get("segments", []))
             if s["t1"] - s["t0"] >= args.min_seconds]
+    import re
+    if args.title:
+        todo = [t for t in todo if re.search(args.title, titles.get(t[0], ""))]
+    if args.not_title:
+        todo = [t for t in todo if not re.search(args.not_title, titles.get(t[0], ""))]
     for n, (vid, k, s) in enumerate(todo, 1):
         d = out_root / vid
         d.mkdir(exist_ok=True)

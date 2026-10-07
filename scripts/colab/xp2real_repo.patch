@@ -1,0 +1,66 @@
+diff --git a/src/cyclegan_turbo.py b/src/cyclegan_turbo.py
+index 9a074c8..2458659 100644
+--- a/src/cyclegan_turbo.py
++++ b/src/cyclegan_turbo.py
+@@ -200,11 +200,18 @@ class CycleGAN_Turbo(torch.nn.Module):
+     def forward_with_networks(x, direction, vae_enc, unet, vae_dec, sched, timesteps, text_emb):
+         B = x.shape[0]
+         assert direction in ["a2b", "b2a"]
+-        x_enc = vae_enc(x, direction=direction).to(x.dtype)
+-        model_pred = unet(x_enc, timesteps, encoder_hidden_states=text_emb,).sample
++        import os as _os
++        amp = _os.environ.get("XP_AMP", "none")   # none | unet | all  (bf16 autocast)
++        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp == "all"):
++            x_enc = vae_enc(x, direction=direction)
++        x_enc = x_enc.to(x.dtype)
++        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp in ("unet", "all")):
++            model_pred = unet(x_enc, timesteps, encoder_hidden_states=text_emb,).sample
++        model_pred = model_pred.to(x.dtype)
+         x_out = torch.stack([sched.step(model_pred[i], timesteps[i], x_enc[i], return_dict=True).prev_sample for i in range(B)])
+-        x_out_decoded = vae_dec(x_out, direction=direction)
+-        return x_out_decoded
++        with torch.autocast("cuda", dtype=torch.bfloat16, enabled=amp == "all"):
++            x_out_decoded = vae_dec(x_out, direction=direction)
++        return x_out_decoded.to(x.dtype)
+ 
+     @staticmethod
+     def get_traininable_params(unet, vae_a2b, vae_b2a):
+diff --git a/src/my_utils/training_utils.py b/src/my_utils/training_utils.py
+index f0819b7..ab7b8e0 100644
+--- a/src/my_utils/training_utils.py
++++ b/src/my_utils/training_utils.py
+@@ -210,6 +210,14 @@ def build_transform(image_prep):
+         T = transforms.Compose([
+             transforms.Resize((512, 512), interpolation=Image.LANCZOS)
+         ])
++    elif image_prep == "randomcrop_448x256_hflip_jitter":   # 16:9 runway crops (512x288 on disk)
++        T = transforms.Compose([
++            transforms.RandomCrop((256, 448)),
++            transforms.RandomHorizontalFlip(),
++            transforms.ColorJitter(brightness=0.15, contrast=0.15, saturation=0.15, hue=0.02),
++        ])
++    elif image_prep == "centercrop_448x256":
++        T = transforms.Compose([transforms.CenterCrop((256, 448))])
+     elif image_prep == "no_resize":
+         T = transforms.Lambda(lambda x: x)
+     return T
+diff --git a/src/train_cyclegan_turbo.py b/src/train_cyclegan_turbo.py
+index 2e3143c..064d342 100644
+--- a/src/train_cyclegan_turbo.py
++++ b/src/train_cyclegan_turbo.py
+@@ -182,12 +182,14 @@ def main(args):
+                 cyc_rec_a = CycleGAN_Turbo.forward_with_networks(cyc_fake_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_b2a_emb)
+                 loss_cycle_a = crit_cycle(cyc_rec_a, img_a) * args.lambda_cycle
+                 loss_cycle_a += net_lpips(cyc_rec_a, img_a).mean() * args.lambda_cycle_lpips
++                accelerator.backward(loss_cycle_a, retain_graph=False)  # split cycle backward: halves peak memory, same gradients
++                loss_cycle_a = loss_cycle_a.detach()
+                 # B -> fake A -> rec B
+                 cyc_fake_a = CycleGAN_Turbo.forward_with_networks(img_b, "b2a", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_b2a_emb)
+                 cyc_rec_b = CycleGAN_Turbo.forward_with_networks(cyc_fake_a, "a2b", vae_enc, unet, vae_dec, noise_scheduler_1step, timesteps, fixed_a2b_emb)
+                 loss_cycle_b = crit_cycle(cyc_rec_b, img_b) * args.lambda_cycle
+                 loss_cycle_b += net_lpips(cyc_rec_b, img_b).mean() * args.lambda_cycle_lpips
+-                accelerator.backward(loss_cycle_a + loss_cycle_b, retain_graph=False)
++                accelerator.backward(loss_cycle_b, retain_graph=False)
+                 if accelerator.sync_gradients:
+                     accelerator.clip_grad_norm_(params_gen, args.max_grad_norm)
+     
