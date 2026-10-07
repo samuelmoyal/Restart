@@ -18,6 +18,7 @@ Written and run in a Colab session (L4), copied here for the record. Paths point
 | `sim2real_t2i.py` | no source image: text-to-image from noise, control = runway quad + its markings + horizon line; environment / weather from the prompt |
 | `sim2real_t2i_full.py` | no source image, control = all Canny edges of the sim frame + runway quad (best mode so far: plausible scene, free colours / textures / weather) |
 | `sim2real_t2i_v3.py` | same mode with prompts in the v3 caption style (water, city, mountains, desert, snow, fog, night) |
+| `sim2real_two_stage.py` | runway restyled in place by img2img, then background repainted from noise by inpainting (runway geometry kept by construction); optional cleaned control + light img2img pass, which over-sharpens at strength 0.35 |
 | `gen_dataset_t2i.py` | generated YOLO-seg training set: one realistic twin per sim crop, prompt drawn from the real captions, same polygon label, per-image runway edge shift logged |
 | `yolo_exp.py` | YOLOv8n-seg trained on sim only / generated only / sim + generated (equal gradient steps), tested on sim, generated and held-out real LARD crops |
 | `cg_init.py` | CycleGAN-Turbo generator at initialisation (no training) |
