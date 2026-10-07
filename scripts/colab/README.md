@@ -12,6 +12,8 @@ Written and run in a Colab session (L4), copied here for the record. Paths point
 | `val_lora.py` | denoising error per checkpoint on held-out vs training videos (convergence / memorisation check) |
 | `sim2real_controlnet.py` | ControlNet (canny + GT runway quad) img2img + LoRA; measures runway edge shift |
 | `sim2real_v2.py` / `_v3.py` / `_v4.py` | control restricted to the runway / control on the first 50 % of steps / weather prompts matching the training captions |
+| `sim2real_v4_nolora.py` | same prompts as v4 with the LoRA optional (pass `none`) |
+| `sim2real_t2i.py` | no source image: text-to-image from noise, control = runway quad + its markings + horizon line; environment / weather from the prompt |
 | `cg_init.py` | CycleGAN-Turbo generator at initialisation (no training) |
 | `xp2real_repo.patch` | patch for `GaParmar/img2img-turbo`: 16:9 448×256 transforms, split cycle backward (halves peak memory), optional bf16 autocast |
 
