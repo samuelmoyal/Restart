@@ -13,7 +13,7 @@ from diffusers import ControlNetModel, StableDiffusionControlNetPipeline, UniPCM
 OUT, LORA, CAPS, SPLIT = sys.argv[1:5]; MAXN = int(sys.argv[5]) if len(sys.argv) > 5 else 10 ** 9
 DS = "/content/img2img-turbo/data/xp2real"; SRC = f"{DS}/{'train_A' if SPLIT == 'train' else 'test_A'}"
 NEG = "video game, flight simulator, cgi, 3d render, cartoon, blurry, text, watermark, window frame, cockpit pillar, windshield wiper, instrument panel"
-W, H, BS = 896, 512, 4
+W, H, BS, STEPS = 672, 384, 4, 20          # 896x512 / 24 steps costs 4.3 s per image on an L4
 random.seed(0); caps = sorted({c["caption"] for c in json.load(open(CAPS))}); pool = [c["caption"] for c in json.load(open(CAPS))]
 labels = {l["file"]: l for l in json.load(open(f"{DS}/sim_labels.json"))[SPLIT]}; files = sorted(labels)[:MAXN]
 for d in ("sim", "gen"):
@@ -62,7 +62,7 @@ todo = [f for f in files if not os.path.exists(f"{OUT}/gen/images/{SPLIT}/{f}")]
 for i in range(0, len(todo), BS):
     batch, ctrls, bigs, quads, prompts = todo[i: i + BS], [], [], [], []
     for f in batch:
-        sim = cv2.imread(f"{SRC}/{f}")[16:272, 32:480]; q = (np.array(labels[f]["corners"], float) - [32, 16]) * 2        # NL, FL, FR, NR at 896x512
+        sim = cv2.imread(f"{SRC}/{f}")[16:272, 32:480]; q = (np.array(labels[f]["corners"], float) - [32, 16]) * (W / 448)        # NL, FL, FR, NR
         big = cv2.resize(sim, (W, H), interpolation=cv2.INTER_CUBIC); ctrl = cv2.Canny(cv2.cvtColor(big, cv2.COLOR_BGR2GRAY), 60, 160)
         cv2.polylines(ctrl, [np.round(q).astype(np.int32)], True, 255, 1)
         poly = clip_poly(list(q), W, H); txt = "0 " + " ".join(f"{x / W:.5f} {y / H:.5f}" for x, y in poly) if poly else ""
@@ -70,7 +70,7 @@ for i in range(0, len(todo), BS):
         cv2.imwrite(f"{OUT}/sim/images/{SPLIT}/{f}", sim, [cv2.IMWRITE_JPEG_QUALITY, 95])
         ctrls.append(Image.fromarray(np.stack([ctrl] * 3, -1))); bigs.append(big); quads.append(q); prompts.append(random.choice(pool))
     res = pipe(prompt=prompts, negative_prompt=[NEG] * len(batch), image=ctrls, width=W, height=H, controlnet_conditioning_scale=1.0, guidance_scale=6.5,
-               num_inference_steps=24, generator=torch.Generator("cpu").manual_seed(i)).images
+               num_inference_steps=STEPS, generator=torch.Generator("cpu").manual_seed(i)).images
     for f, im, big, q, p in zip(batch, res, bigs, quads, prompts):
         gen = cv2.cvtColor(np.asarray(im), cv2.COLOR_RGB2BGR); cv2.imwrite(f"{OUT}/gen/images/{SPLIT}/{f}", gen, [cv2.IMWRITE_JPEG_QUALITY, 92])
         ga, gb = cv2.cvtColor(big, cv2.COLOR_BGR2GRAY).astype(np.float32), cv2.cvtColor(gen, cv2.COLOR_BGR2GRAY).astype(np.float32)

@@ -19,8 +19,9 @@ Written and run in a Colab session (L4), copied here for the record. Paths point
 | `sim2real_t2i_full.py` | no source image, control = all Canny edges of the sim frame + runway quad (best mode so far: plausible scene, free colours / textures / weather) |
 | `sim2real_t2i_v3.py` | same mode with prompts in the v3 caption style (water, city, mountains, desert, snow, fog, night) |
 | `gen_dataset_t2i.py` | generated YOLO-seg training set: one realistic twin per sim crop, prompt drawn from the real captions, same polygon label, per-image runway edge shift logged |
+| `yolo_exp.py` | YOLOv8n-seg trained on sim only / generated only / sim + generated (equal gradient steps), tested on sim, generated and held-out real LARD crops |
 | `cg_init.py` | CycleGAN-Turbo generator at initialisation (no training) |
 | `xp2real_repo.patch` | patch for `GaParmar/img2img-turbo`: 16:9 448×256 transforms, split cycle backward (halves peak memory), optional bf16 autocast |
 
 Measured on an L4: CycleGAN-Turbo 4.5–5 s/iteration at 448×256 (peak 17 GB after the patch);
-LoRA training 0.63 s/iteration (batch 8); generation ~1.5 s/image at 896×512.
+LoRA training 0.63 s/iteration (batch 8); generation 4.3 s/image at 896×512 with 24 steps (batch 4), 1.9 s/image at 672×384 with 20 steps.
