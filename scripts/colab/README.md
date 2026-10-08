@@ -26,3 +26,19 @@ Written and run in a Colab session (L4), copied here for the record. Paths point
 
 Measured on an L4: CycleGAN-Turbo 4.5–5 s/iteration at 448×256 (peak 17 GB after the patch);
 LoRA training 0.63 s/iteration (batch 8); generation 4.3 s/image at 896×512 with 24 steps (batch 4), 1.9 s/image at 672×384 with 20 steps.
+
+## YOLO experiment (LoRA v3, one-pass generation, 2026-10-07)
+
+YOLOv8n-seg, 3,090 sim crops and their generated twins (672×384), equal gradient steps, one seed.
+Real test = 474 LARD real crops from 32 airports held out of the LoRA training (`results/lard_real_split.json`).
+Full numbers in `results/yolo_exp_v3.json`; per-image analysis with `yolo_real_analysis.py`.
+
+| trained on | real mask mAP50 | real mask mAP | detected (conf ≥ 0.25) | IoU > 0.5 | small runways IoU > 0.5 | large runways IoU > 0.5 |
+|---|---|---|---|---|---|---|
+| sim | 0.605 | 0.433 | 81.4 % | 64.8 % | 53.2 % | 76.4 % |
+| generated | 0.721 | 0.533 | 73.8 % | 64.8 % | 46.0 % | 83.5 % |
+| sim + generated | 0.651 | 0.490 | 73.4 % | 62.0 % | 43.0 % | 81.0 % |
+
+No clear gain on the real set: the generated-only model is more selective (higher mAP, better on large runways)
+but worse on small runways (below 2 % of the image); bootstrap intervals of the mean IoU overlap.
+Generated set: median runway edge shift 0 px, 10.6 % of images with an edge off by more than 2 px (448×256 scale).
