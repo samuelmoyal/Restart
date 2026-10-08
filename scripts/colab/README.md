@@ -47,8 +47,31 @@ No clear gain on the real set: the generated-only model is more selective (highe
 but worse on small runways (below 2 % of the image); bootstrap intervals of the mean IoU overlap.
 Generated set: median runway edge shift 0 px, 10.6 % of images with an edge off by more than 2 px (448×256 scale).
 
-Size breakdown of the same experiment (held-out real crops, share of runways with IoU > 0.5 at conf ≥ 0.25, by runway width as a
-share of the image width): below 6 % about 0.40 for every model; 6–10 %: sim 0.74, generated 0.58; 10–20 %: 0.73 vs 0.82;
-20–40 %: 0.80 vs 0.86. The training crops never show a runway narrower than ~12 % of the image (median 26 %), while the real
-median is 8.8 %: the size mismatch dominates the errors. On the sim / generated tests (0–600 m from the threshold) every
-distance bin is at 0.9 or above.
+## YOLO experiment v4 (size-matched crops, per-pixel strength generation, 2026-10-08)
+
+Same protocol and same real test (474 held-out LARD crops); sim crops from `prep_sim_v2.py` / `split_sim_v2.py`,
+generated twins from `gen_dataset_dd.py`. Numbers in `results/yolo_exp_v4.json`.
+
+| trained on | real mask mAP50 | real mask mAP | detected (conf ≥ 0.25) | IoU > 0.5 |
+|---|---|---|---|---|
+| sim | 0.721 | 0.502 | 88.2 % | 76.2 % |
+| generated | 0.756 | 0.540 | 81.9 % | 73.0 % |
+| sim + generated | 0.842 | 0.641 | 85.7 % | 77.8 % |
+
+Share of real runways with IoU > 0.5 by runway width (share of the image width), previous experiment → this one:
+
+| width | n | sim | generated | sim + generated |
+|---|---|---|---|---|
+| below 6 % | 74 | 0.16 → 0.74 | 0.09 → 0.72 | 0.08 → 0.73 |
+| 6–10 % | 82 | 0.66 → 0.78 | 0.43 → 0.63 | 0.43 → 0.65 |
+| 10–20 % | 175 | 0.75 → 0.76 | 0.81 → 0.70 | 0.74 → 0.78 |
+| above 20 % | 143 | 0.77 → 0.76 | 0.87 → 0.83 | 0.86 → 0.87 |
+
+The gain comes from the runway size distribution of the sim crops (sim only: +11.4 points, paired bootstrap 95 % CI [7.8, 15.0]).
+Adding generated images raises the mask mAP (0.50 → 0.64) and the large-runway score, but the share of well-segmented
+runways moves by +1.7 points only (CI [-2.1, 5.5]); one seed per model.
+
+Note: `src_w` in `lard_real_crops_meta.json` is the width of the source crop before resizing to 512 px, not the image width.
+Widths must be divided by 512. The target quantiles in `prep_sim_v2.py` were computed with `src_w` and are therefore too
+small (median 8 % instead of 13 %); the 30 % uniform component brings the final mix (median 12 %) close to the true real
+distribution (median 13 %, 5–95 % range 3.5–32 %).
