@@ -20,6 +20,9 @@ Written and run in a Colab session (L4), copied here for the record. Paths point
 | `sim2real_t2i_v3.py` | same mode with prompts in the v3 caption style (water, city, mountains, desert, snow, fog, night) |
 | `sim2real_two_stage.py` | runway restyled in place by img2img, then background repainted from noise by inpainting (runway geometry kept by construction); optional cleaned control + light img2img pass, which over-sharpens at strength 0.35 |
 | `sim2real_diffdiff.py` | one pass with a per-pixel strength map (Differential Diffusion): runway tied to the noised sim latents for the first steps, background free; on 20 images, runway strength 0.5 halves the share of edges off by more than 2 px (5 % vs 10 %) |
+| `prep_sim_v2.py` / `split_sim_v2.py` | sim crops up to 3 km from the threshold, runway width drawn from the real LARD distribution (median 12 % of the image after mixing, 3–36 % for the 5–95 % range), same airport split as before |
+| `sim2real_dd_small.py` | strength maps compared on small runways: runway 0.3 + context ring + background 0.9 removes most invented runways, images slightly hazier |
+| `gen_dataset_dd.py` | generated YOLO-seg set with the per-pixel strength map (runway 0.5, or 0.3 when narrower than 10 % of the image; background 0.9) |
 | `gen_dataset_t2i.py` | generated YOLO-seg training set: one realistic twin per sim crop, prompt drawn from the real captions, same polygon label, per-image runway edge shift logged |
 | `yolo_exp.py` | YOLOv8n-seg trained on sim only / generated only / sim + generated (equal gradient steps), tested on sim, generated and held-out real LARD crops |
 | `cg_init.py` | CycleGAN-Turbo generator at initialisation (no training) |
