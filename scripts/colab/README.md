@@ -19,6 +19,7 @@ Written and run in a Colab session (L4), copied here for the record. Paths point
 | `sim2real_t2i_full.py` | no source image, control = all Canny edges of the sim frame + runway quad (best mode so far: plausible scene, free colours / textures / weather) |
 | `sim2real_t2i_v3.py` | same mode with prompts in the v3 caption style (water, city, mountains, desert, snow, fog, night) |
 | `sim2real_two_stage.py` | runway restyled in place by img2img, then background repainted from noise by inpainting (runway geometry kept by construction); optional cleaned control + light img2img pass, which over-sharpens at strength 0.35 |
+| `sim2real_diffdiff.py` | one pass with a per-pixel strength map (Differential Diffusion): runway tied to the noised sim latents for the first steps, background free; on 20 images, runway strength 0.5 halves the share of edges off by more than 2 px (5 % vs 10 %) |
 | `gen_dataset_t2i.py` | generated YOLO-seg training set: one realistic twin per sim crop, prompt drawn from the real captions, same polygon label, per-image runway edge shift logged |
 | `yolo_exp.py` | YOLOv8n-seg trained on sim only / generated only / sim + generated (equal gradient steps), tested on sim, generated and held-out real LARD crops |
 | `cg_init.py` | CycleGAN-Turbo generator at initialisation (no training) |
@@ -42,3 +43,9 @@ Full numbers in `results/yolo_exp_v3.json`; per-image analysis with `yolo_real_a
 No clear gain on the real set: the generated-only model is more selective (higher mAP, better on large runways)
 but worse on small runways (below 2 % of the image); bootstrap intervals of the mean IoU overlap.
 Generated set: median runway edge shift 0 px, 10.6 % of images with an edge off by more than 2 px (448×256 scale).
+
+Size breakdown of the same experiment (held-out real crops, share of runways with IoU > 0.5 at conf ≥ 0.25, by runway width as a
+share of the image width): below 6 % about 0.40 for every model; 6–10 %: sim 0.74, generated 0.58; 10–20 %: 0.73 vs 0.82;
+20–40 %: 0.80 vs 0.86. The training crops never show a runway narrower than ~12 % of the image (median 26 %), while the real
+median is 8.8 %: the size mismatch dominates the errors. On the sim / generated tests (0–600 m from the threshold) every
+distance bin is at 0.9 or above.
