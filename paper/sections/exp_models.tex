@@ -1,0 +1,50 @@
+\subsection{Segmentation models: accuracy vs.\ latency}
+\label{sec:exp-models}
+\paragraph{Latency.}
+Latency depends on the architecture and input size only, so we measure it once with COCO-pretrained weights (\cref{tab:latency-l4}).
+At equal size, the three YOLO generations (v8, 11, 26) are within 10\,\% of each other; model size and input resolution dominate.
+For the nano models, pre- and post-processing (letterboxing the $1280\times720$ frame, decoding and upsampling masks) cost more than the network itself, so the end-to-end time is not proportional to the FLOPs.
+\todo{convert to Jetson Orin NX: calibrate the L4$\rightarrow$Orin NX factor with YOLOv8s detection (7.94\,ms FP16 on Orin NX 16\,GB reported by Ultralytics); check the 1280 vs.\ 960 anomaly for nano models.}
+
+\input{tables/latency_l4}
+
+\paragraph{Training protocol.}
+All models are trained on the union of BARS and RLD restricted to the runway class (17{,}858 training, 2{,}001 validation and 2{,}650 test images).
+BARS keeps its official split; RLD has no airport metadata and its file numbering follows the source videos, so we split it by blocks of 200 consecutive images (80/10/10) to keep near-duplicate frames on the same side.
+Every run uses the Ultralytics defaults (SGD, 40 epochs at most, early stopping after 10 epochs without improvement, mosaic, random scale $\pm50\,\%$, horizontal flip) and evaluates at its training resolution.
+
+\paragraph{Search strategy.}
+A full grid over three generations, three sizes and three input resolutions would take 27 training runs.
+We instead optimise one axis at a time: generation at nano size and 640\,px, then model size with the best generation, then input resolution with the best model, and finally one cross-check of the size--resolution interaction at matched latency (e.g.\ nano at 1280\,px vs.\ small at 960\,px), the only coupling we expect to matter.
+
+\paragraph{Is the resolution comparison biased by augmentation?}
+Mosaic and random scaling are defined relative to the training resolution: each image is resized so its long side equals the input size before being tiled and rescaled by a factor in $[0.5, 1.5]$.
+Training and test object sizes therefore scale together with the input resolution, and every model sees a training distribution matched to its own test resolution; the comparison is fair in that sense.
+Two caveats remain.
+First, the $0.5\times$ end of the scale augmentation shrinks already-small runways below the stride of the finest feature map (8\,px) at 640\,px, wasting part of the training signal precisely on the far range; this penalises low resolutions more than high ones, which is a property of the recipe rather than a bias, but we report it.
+Second, mosaic trains on square crops while inference uses rectangular letterboxed frames; this is identical across resolutions.
+Native resolutions are $1920\times1080$ (BARS) and mostly $1280\times720$ (RLD), so 1280\,px adds real detail for BARS but is close to native for RLD; upsampling beyond native adds no information but still spreads small objects over more cells of the stride-8 grid.
+
+\paragraph{Training budget.}
+For YOLO11n at 640\,px, validation mask mAP50--95 rises from 0.52 after one epoch to 0.65 at epoch 11 and stays within $\pm0.01$ up to epoch 16 (\SI{150}{s} per epoch on an L4).
+We therefore train the remaining configurations for 25 epochs; YOLO11n is trained both for 40 and 25 epochs to measure what the shorter budget costs. \todo{final 40 vs.\ 25 numbers.}
+
+\paragraph{Apparent runway size, not resolution.}
+Distance, field of view and input resolution act on the detector only through the apparent size of the runway at the network input.
+For a runway of width $W_r$ seen at slant distance $d$ by a camera of horizontal field of view $\phi$ whose image is resized to $W_\text{in}$ pixels wide, the apparent width is
+\begin{equation}
+s = \frac{W_\text{in}\, W_r}{2\, d \tan(\phi/2)}.
+\label{eq:apparent-size}
+\end{equation}
+We therefore report accuracy as a function of $s$ rather than of $d$ or $W_\text{in}$ separately.
+If the curves for different input resolutions collapse onto one curve of $s$, the model has a resolution-independent operating band $[s_\text{min}, s_\text{max}]$, and \cref{eq:apparent-size} gives the input width needed at each distance; with $W_r=\SI{45}{m}$, $\phi=\SI{65}{\degree}$ and $s_\text{min}=20$\,px, a runway at \SI{3}{km} requires $W_\text{in}\approx1700$\,px.
+This is the quantitative argument for the crop tracker of \cref{sec:exp-tracking}: rather than raising the resolution of the whole frame, it keeps the runway inside the operating band at constant cost. \todo{curves of IoU and corner error vs.\ $s$ for the three resolutions; estimate $s_\text{min}$, $s_\text{max}$.}
+
+\paragraph{Accuracy.}
+\todo{E1 results: test mask mAP on BARS and RLD, then IoU / corner error by distance on LARD and XP12.}
+
+\subsection{Other model families}
+\todo{E2: DeepLabV3+ / LR-ASPP MobileNetV3, SegFormer-B0, PIDNet, RTMDet-Ins, 4-corner keypoint regression.}
+
+\subsection{Data scaling}
+\todo{E3: error$(N) = aN^{-b}+c$ for 3 models.}

@@ -1,0 +1,218 @@
+{
+ "yolov8n-seg@640": {
+  "preprocess": 1.2066429799972411,
+  "inference": 0.7474080049991016,
+  "postprocess": 0.4343901299949948,
+  "total_mean": 2.3884411149913376,
+  "total_p95": 2.6114473999541588,
+  "gpu": "NVIDIA L4"
+ },
+ "yolov8n-seg@960": {
+  "preprocess": 2.7342411449996007,
+  "inference": 1.200891070002399,
+  "postprocess": 0.44306659499682155,
+  "total_mean": 4.378198809998821,
+  "total_p95": 4.751226100046324,
+  "gpu": "NVIDIA L4"
+ },
+ "yolov8n-seg@1280": {
+  "preprocess": 1.6392341350064044,
+  "inference": 1.9095439549982984,
+  "postprocess": 0.4013303249962519,
+  "total_mean": 3.9501084150009547,
+  "total_p95": 4.0157903500755765,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo11n-seg@640": {
+  "preprocess": 1.2104012950010201,
+  "inference": 0.8447521799985225,
+  "postprocess": 0.4400233849992219,
+  "total_mean": 2.4951768599987645,
+  "total_p95": 2.6663399502467655,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo11n-seg@960": {
+  "preprocess": 2.7770155700068244,
+  "inference": 1.3163388650025354,
+  "postprocess": 0.45428947500340655,
+  "total_mean": 4.547643910012766,
+  "total_p95": 5.484096299903737,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo11n-seg@1280": {
+  "preprocess": 1.9819372349979858,
+  "inference": 2.0464172300080463,
+  "postprocess": 0.5168014499997753,
+  "total_mean": 4.545155915005807,
+  "total_p95": 4.790298549983163,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo26n-seg@640": {
+  "preprocess": 1.262317579997898,
+  "inference": 0.8915383349915373,
+  "postprocess": 0.4666851449951537,
+  "total_mean": 2.620541059984589,
+  "total_p95": 2.7325960500320434,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo26n-seg@960": {
+  "preprocess": 2.8162956949961426,
+  "inference": 1.3604248549938802,
+  "postprocess": 0.49875705999738784,
+  "total_mean": 4.675477609987411,
+  "total_p95": 4.861366250145238,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo26n-seg@1280": {
+  "preprocess": 1.8542197050010145,
+  "inference": 2.1318984200047453,
+  "postprocess": 0.4603829100017265,
+  "total_mean": 4.446501035007486,
+  "total_p95": 4.698023200273838,
+  "gpu": "NVIDIA L4"
+ },
+ "yolov8s-seg@640": {
+  "preprocess": 1.2057293849943562,
+  "inference": 1.222333009977774,
+  "postprocess": 0.4306743450183603,
+  "total_mean": 2.8587367399904906,
+  "total_p95": 2.9136860495782457,
+  "gpu": "NVIDIA L4"
+ },
+ "yolov8s-seg@960": {
+  "preprocess": 2.6768439100101205,
+  "inference": 2.255694804985069,
+  "postprocess": 0.4151905250114396,
+  "total_mean": 5.347729240006629,
+  "total_p95": 5.483132699669113,
+  "gpu": "NVIDIA L4"
+ },
+ "yolov8s-seg@1280": {
+  "preprocess": 1.6999325499932638,
+  "inference": 4.207699860012326,
+  "postprocess": 0.42159964999427757,
+  "total_mean": 6.3292320599998675,
+  "total_p95": 6.445906100498178,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo11s-seg@640": {
+  "preprocess": 1.2010139950029952,
+  "inference": 1.260296885009211,
+  "postprocess": 0.42997157999934643,
+  "total_mean": 2.8912824600115528,
+  "total_p95": 2.95136820047901,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo11s-seg@960": {
+  "preprocess": 2.6734381850042155,
+  "inference": 2.3388986100212605,
+  "postprocess": 0.4227193900169368,
+  "total_mean": 5.435056185042413,
+  "total_p95": 5.597733299782703,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo11s-seg@1280": {
+  "preprocess": 1.7231201149911612,
+  "inference": 4.258722974984721,
+  "postprocess": 0.4212841299909087,
+  "total_mean": 6.403127219966791,
+  "total_p95": 6.627477450092556,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo26s-seg@640": {
+  "preprocess": 1.1885915749780906,
+  "inference": 1.3714067699856969,
+  "postprocess": 0.40661879001390844,
+  "total_mean": 2.966617134977696,
+  "total_p95": 2.9996607998782565,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo26s-seg@960": {
+  "preprocess": 2.658904540007825,
+  "inference": 2.498849615005838,
+  "postprocess": 0.4201733000036256,
+  "total_mean": 5.577927455017289,
+  "total_p95": 5.76219169995511,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo26s-seg@1280": {
+  "preprocess": 1.7187322999893695,
+  "inference": 4.744106699986332,
+  "postprocess": 0.4213416799893821,
+  "total_mean": 6.884180679965084,
+  "total_p95": 7.086143899823583,
+  "gpu": "NVIDIA L4"
+ },
+ "yolov8m-seg@640": {
+  "preprocess": 1.2032627349958602,
+  "inference": 2.7442405099941425,
+  "postprocess": 0.4061472450052861,
+  "total_mean": 4.353650489995289,
+  "total_p95": 4.4831396503923315,
+  "gpu": "NVIDIA L4"
+ },
+ "yolov8m-seg@960": {
+  "preprocess": 2.66666099998929,
+  "inference": 5.5096246249809155,
+  "postprocess": 0.42699225499063687,
+  "total_mean": 8.603277879960842,
+  "total_p95": 8.79274930025531,
+  "gpu": "NVIDIA L4"
+ },
+ "yolov8m-seg@1280": {
+  "preprocess": 1.8344271399996614,
+  "inference": 11.490288534998854,
+  "postprocess": 0.4714168600025914,
+  "total_mean": 13.796132535001107,
+  "total_p95": 14.319506400124736,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo11m-seg@640": {
+  "preprocess": 1.191402809988631,
+  "inference": 2.7458687399939663,
+  "postprocess": 0.41445225002462394,
+  "total_mean": 4.351723800007221,
+  "total_p95": 4.482632250301322,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo11m-seg@960": {
+  "preprocess": 2.6810777150103604,
+  "inference": 5.765856929990605,
+  "postprocess": 0.429510035023668,
+  "total_mean": 8.876444680024633,
+  "total_p95": 9.133913800155824,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo11m-seg@1280": {
+  "preprocess": 1.8167560900064927,
+  "inference": 12.114810035000119,
+  "postprocess": 0.4581341450011678,
+  "total_mean": 14.38970027000778,
+  "total_p95": 14.881886650346132,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo26m-seg@640": {
+  "preprocess": 1.2187737999784076,
+  "inference": 2.9282919150136877,
+  "postprocess": 0.45299057001102483,
+  "total_mean": 4.60005628500312,
+  "total_p95": 4.8079376989790035,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo26m-seg@960": {
+  "preprocess": 2.708324750005886,
+  "inference": 6.328648245025761,
+  "postprocess": 0.4524272399385154,
+  "total_mean": 9.489400234970162,
+  "total_p95": 9.757637048778633,
+  "gpu": "NVIDIA L4"
+ },
+ "yolo26m-seg@1280": {
+  "preprocess": 1.9100707550342122,
+  "inference": 13.063943125025617,
+  "postprocess": 0.5025134700372291,
+  "total_mean": 15.476527350097058,
+  "total_p95": 16.05149565002648,
+  "gpu": "NVIDIA L4"
+ }
+}

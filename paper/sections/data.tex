@@ -1,0 +1,21 @@
+\paragraph{Datasets.}
+We use three public runway datasets and one of our own.
+LARD~\cite{lard} provides 14{,}668 synthetic images rendered at 117 airports, each with its four runway corners and the full 6-DoF camera pose (slant distance, lateral and vertical path angles); it is the only public set with pose.
+BARS~\cite{bars} (10{,}255 images, mostly X-Plane) and RLD (12{,}254 images) provide runway polygons or quadrilaterals but no pose.
+Our X-Plane~12 set (XP12) contains 118 continuous approaches at $1280\times720$\,px with ground-truth pose for every frame, from \SI{2.8}{km} to the threshold; it is our sequential pose benchmark.
+\todo{LARD real test set: archive incomplete, re-download.}
+
+\paragraph{Uniform audit.}
+Published statistics are not comparable across datasets, so we compute the same descriptors on every image.
+Geometry comes from the labels: number of runway instances and width of the largest runway once the image is resized to the 640-px network input.
+Pose statistics come from the metadata where available.
+For lighting and weather, LARD's \texttt{weather} and \texttt{night} columns are empty, and a pixel-level haze proxy (dark-channel mean and RMS contrast) proved unreliable: on inspection it mostly selected bright, low-contrast desert ground rather than fog.
+We therefore tag each image zero-shot with CLIP ViT-L/14~\cite{clip}: each attribute (night, dusk, fog, rain on the windshield, snow, sun glare, overcast) is a pair of positive and negative prompts, and its score is the softmax probability of the positive prompt (0.5 is chance).
+Thresholds are fixed per attribute and checked by hand on contact sheets of the tagged images.
+\todo{thresholds and resulting percentages, \cref{tab:audit}, \cref{fig:audit}.}
+
+\paragraph{Findings so far.}
+Small runways dominate: at a 640-px input, the median runway is 14\,px wide in LARD and 20\,px in XP12, and 54\,\% of LARD images (30\,\% of XP12 frames) show a runway narrower than 16\,px.
+LARD spans 0.15--\SI{4.3}{km} and lateral path angles of $\pm$\SI{4.4}{\degree} (5th--95th percentile); XP12 spans 0.15--\SI{2.8}{km}, $-1.7$ to \SI{2.2}{\degree}, with relative yaw within $\pm$\SI{9}{\degree}.
+Neither set contains night images (mean luminance never below 60).
+\todo{BARS / RLD audit; weather percentages from CLIP; airport overlap between BARS splits.}

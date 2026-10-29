@@ -1,0 +1,65 @@
+\documentclass[10pt,twocolumn]{article}
+\usepackage[margin=0.75in]{geometry}
+\usepackage{amsmath,amssymb,booktabs,graphicx,xcolor,hyperref,siunitx}
+\usepackage[capitalise]{cleveref}
+\sisetup{detect-all}
+\newcommand{\todo}[1]{\textcolor{orange}{[TODO: #1]}}
+
+\title{Runway-Relative Yaw and Lateral Offset from a Single Monocular Camera\\on an Embedded GPU}
+\author{Samuel Moyal\\Carnegie Mellon University}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\todo{write last.}
+\end{abstract}
+
+% ------------------------------------------------------------------
+\section{Introduction}
+\label{sec:intro}
+On final approach, an aircraft must know its heading relative to the runway axis (yaw) and its cross-track offset from the centerline (lateral offset).
+GNSS and ILS provide them when available; when GNSS is jammed or the airfield has no ILS, a forward-looking camera is the only sensor that observes the runway itself.
+We estimate yaw and lateral offset from a single monocular RGB camera, assuming the runway dimensions are known (from a runway database), under two deployment constraints: the full pipeline must run on an NVIDIA Jetson Orin NX 16\,GB at more than \SI{10}{Hz}, and it must hold under adverse weather (fog, rain, night, glare).
+
+Our pipeline segments the runway, fits its four corners, recovers the camera pose from the runway-plane homography, and filters it with a kinematic EKF.
+\todo{contributions list once experiments are done.}
+
+% ------------------------------------------------------------------
+\section{Related Work}
+\label{sec:related}
+\todo{vision-based landing; LARD, BARS, RLD; real-time semantic / instance segmentation; corner keypoint regression; data scaling laws; sim-to-real with diffusion.}
+
+% ------------------------------------------------------------------
+\section{Problem and Constraints}
+\label{sec:problem}
+\todo{runway frame, camera model, definition of yaw / lateral offset; latency budget (100 ms end-to-end, worst case includes the full-frame fallback of the crop tracker).}
+
+% ------------------------------------------------------------------
+\section{Data}
+\label{sec:data}
+\input{sections/data}
+
+% ------------------------------------------------------------------
+\section{Method}
+\label{sec:method}
+\todo{segmentation $\rightarrow$ quad $\rightarrow$ homography (5 Gauss--Newton iterations) $\rightarrow$ EKF; closed-loop crop at $t-1$.}
+
+% ------------------------------------------------------------------
+\section{Experiments}
+\label{sec:exp}
+\paragraph{Evaluation protocol.}
+We optimise sequentially: first the segmentation model with the post-processing frozen, then the post-processing with the segmentation fixed, and finally re-rank the best segmentation models with the tuned post-processing to check that the ranking holds.
+Segmentation is reported with mask IoU, boundary IoU and corner error; every model is also run through a frozen reference post-processing so that its pose error is reported alongside.
+
+\input{sections/exp_models}
+\input{sections/exp_tracking}
+
+% ------------------------------------------------------------------
+\section{Limitations and Future Work}
+\todo{}
+
+\bibliographystyle{plain}
+\bibliography{refs}
+\end{document}

@@ -1,0 +1,31 @@
+\subsection{Temporal modules on top of the segmenter}
+\label{sec:exp-tracking}
+We compare four ways of producing the runway mask on 13 X-Plane~12 approaches (2{,}801 frames, \SI{2.8}{km} to threshold), with the same YOLOv8n-seg weights and no retraining:
+(i) full frame at $640$ px (baseline);
+(ii) a closed-loop crop: a 16:9 window four times the size of the runway found at $t-1$ (at least 256 px), resized to 640 px, falling back to the full frame when nothing is found;
+(iii) a lower confidence threshold (0.1, the default of Ultralytics tracking);
+(iv) BoT-SORT via \texttt{model.track}, keeping the raw masks of the followed track.
+Pose is estimated with homography (5 iterations) and the kinematic EKF in all cases (every 4th frame, 1{,}404 frames).
+
+\begin{table}[t]
+\centering\small
+\caption{Pose error by mask source, homography + EKF, 13 XP12 approaches.}
+\label{tab:tracking-pose}
+\begin{tabular}{lrrrr}
+\toprule
+Mask source & meas. & lat MAE & lat p95 & yaw MAE \\
+\midrule
+Full frame & 68.5\,\% & 3.37\,m & 10.8\,m & 0.18$^\circ$ \\
+\textbf{Crop $t-1$} & 69.1\,\% & \textbf{3.08\,m} & 11.0\,m & \textbf{0.16$^\circ$} \\
+Conf.\ 0.1 & 81.6\,\% & 8.45\,m & 18.4\,m & 0.43$^\circ$ \\
+BoT-SORT & 81.6\,\% & 8.45\,m & 18.4\,m & 0.43$^\circ$ \\
+Crop + conf.\ 0.1 & 82.1\,\% & 8.68\,m & 18.1\,m & 0.51$^\circ$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The crop raises the share of frames with mask IoU $>0.5$ from 46.3\,\% to 59.1\,\% overall and from 34\,\% to 73\,\% in the last \SI{500}{m}, and lowers lateral error at 1--1.5\,km from 2.1 to 1.4\,m (\cref{tab:tracking-pose}).
+It does not help beyond \SI{2}{km}, where the problem is the first detection, not its refinement.
+Lowering the threshold increases availability at 2--3\,km from 29\,\% to 51\,\% but those masks are poor: lateral error there grows from 11 to 36\,m once they enter the EKF.
+BoT-SORT is identical to the 0.1 threshold to the third decimal: with a single runway there is nothing to associate, and Ultralytics returns the raw masks of matched detections and nothing for lost tracks, so it cannot fill gaps that the EKF already coasts through.
+\todo{re-run on all 86 approaches with the final segmenter; use low-confidence detections only to place the re-acquisition crop.}

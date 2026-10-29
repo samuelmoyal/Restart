@@ -1,0 +1,22 @@
+\begin{table}[t]
+\centering\small\setlength{\tabcolsep}{3.5pt}
+\caption{YOLO-seg latency (ms) on an NVIDIA L4, TensorRT FP16, batch 1, $1280\times720$ input. Inf.: network only; total: pre-processing, inference and mask post-processing (mean of 200 runs).}
+\label{tab:latency-l4}
+\begin{tabular}{lrrrrrr}
+\toprule
+ & \multicolumn{2}{c}{640} & \multicolumn{2}{c}{960} & \multicolumn{2}{c}{1280} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}\cmidrule(lr){6-7}
+Model & inf. & total & inf. & total & inf. & total \\
+\midrule
+v8n & 0.75 & 2.39 & 1.20 & 4.38 & 1.91 & 3.95 \\
+11n & 0.84 & 2.50 & 1.32 & 4.55 & 2.05 & 4.55 \\
+26n & 0.89 & 2.62 & 1.36 & 4.68 & 2.13 & 4.45 \\
+v8s & 1.22 & 2.86 & 2.26 & 5.35 & 4.21 & 6.33 \\
+11s & 1.26 & 2.89 & 2.34 & 5.44 & 4.26 & 6.40 \\
+26s & 1.37 & 2.97 & 2.50 & 5.58 & 4.74 & 6.88 \\
+v8m & 2.74 & 4.35 & 5.51 & 8.60 & 11.49 & 13.80 \\
+11m & 2.75 & 4.35 & 5.77 & 8.88 & 12.11 & 14.39 \\
+26m & 2.93 & 4.60 & 6.33 & 9.49 & 13.06 & 15.48 \\
+\bottomrule
+\end{tabular}
+\end{table}
