@@ -17,5 +17,7 @@ Thresholds are fixed per attribute and checked by hand on contact sheets of the 
 \paragraph{Findings so far.}
 Small runways dominate: at a 640-px input, the median runway is 14\,px wide in LARD and 20\,px in XP12, and 54\,\% of LARD images (30\,\% of XP12 frames) show a runway narrower than 16\,px.
 LARD spans 0.15--\SI{4.3}{km} and lateral path angles of $\pm$\SI{4.4}{\degree} (5th--95th percentile); XP12 spans 0.15--\SI{2.8}{km}, $-1.7$ to \SI{2.2}{\degree}, with relative yaw within $\pm$\SI{9}{\degree}.
-Neither set contains night images (mean luminance never below 60).
-\todo{BARS / RLD audit; weather percentages from CLIP; airport overlap between BARS splits.}
+Neither set contains night images (mean luminance never below 60), and CLIP confirms that adverse conditions are almost absent: in LARD, 0\,\% of images are tagged fog, rain, snow or overcast and 0.8\,\% dusk / low sun; in XP12, 0.6\,\% fog, 3.8\,\% dusk and 1.5\,\% night, with no rain or snow.
+Thresholds are 0.5 for fog and 0.8 for dusk, where the contact sheets show almost only true positives; the first version of the night prompt mentioned ``runway lights'' and fired on 13\,\% of LARD daytime images, a reminder that zero-shot tags must be checked by eye.
+Robustness to weather therefore cannot be measured on these sets and needs dedicated data (\cref{sec:exp}).
+\todo{BARS / RLD audit; airport overlap between BARS splits.}

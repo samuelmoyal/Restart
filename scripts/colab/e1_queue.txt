@@ -1,7 +1,6 @@
-# one-factor-at-a-time. Axis 1: generation (n, 640). 25 epochs from here on (curve plateaus ~ep 11);
-# y11n_640 (40 ep) vs y11n_640_e25 doubles as the epoch-budget ablation.
-y11n_640 yolo11n-seg.pt 640 40
-y11n_640_e25 yolo11n-seg.pt 640 25 cache=ram
-y26n_640 yolo26n-seg.pt 640 25 cache=ram
-y8n_640 yolov8n-seg.pt 640 25 cache=ram
+# one-factor-at-a-time, 30 epochs for every run (y11n 40-ep curve: plateau 0.65 +-0.01 mask mAP50-95 from epoch 11)
+# Axis 1: generation (n, 640)
+y11n_640_e30 yolo11n-seg.pt 640 30 cache=ram
+y26n_640_e30 yolo26n-seg.pt 640 30 cache=ram
+y8n_640_e30 yolov8n-seg.pt 640 30 cache=ram
 # Axis 2 (size) and 3 (resolution) are appended once axis 1 is decided

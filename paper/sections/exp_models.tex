@@ -11,7 +11,7 @@ For the nano models, pre- and post-processing (letterboxing the $1280\times720$ 
 \paragraph{Training protocol.}
 All models are trained on the union of BARS and RLD restricted to the runway class (17{,}858 training, 2{,}001 validation and 2{,}650 test images).
 BARS keeps its official split; RLD has no airport metadata and its file numbering follows the source videos, so we split it by blocks of 200 consecutive images (80/10/10) to keep near-duplicate frames on the same side.
-Every run uses the Ultralytics defaults (SGD, 40 epochs at most, early stopping after 10 epochs without improvement, mosaic, random scale $\pm50\,\%$, horizontal flip) and evaluates at its training resolution.
+Every run uses the Ultralytics defaults (SGD, 30 epochs, mosaic, random scale $\pm50\,\%$, horizontal flip) and evaluates at its training resolution.
 
 \paragraph{Search strategy.}
 A full grid over three generations, three sizes and three input resolutions would take 27 training runs.
@@ -27,7 +27,27 @@ Native resolutions are $1920\times1080$ (BARS) and mostly $1280\times720$ (RLD),
 
 \paragraph{Training budget.}
 For YOLO11n at 640\,px, validation mask mAP50--95 rises from 0.52 after one epoch to 0.65 at epoch 11 and stays within $\pm0.01$ up to epoch 16 (\SI{150}{s} per epoch on an L4).
-We therefore train the remaining configurations for 25 epochs; YOLO11n is trained both for 40 and 25 epochs to measure what the shorter budget costs. \todo{final 40 vs.\ 25 numbers.}
+It ends at 0.645 after 40 epochs (best 0.664 at epoch 19), so longer training buys nothing.
+We therefore train every configuration for 30 epochs; the 40-epoch YOLO11n run serves as the budget ablation.
+On the test splits the two budgets differ in opposite directions (BARS mask mAP50--95 0.789 at 30 epochs vs.\ 0.779 at 40, RLD 0.526 vs.\ 0.547; \cref{tab:e1}), while 30 epochs take 68 instead of 101 minutes. \todo{seed variance: repeat one configuration with 2 more seeds to size the noise.}
+
+\begin{table}[t]
+\centering\small
+\caption{E1 test results (mask mAP, runway class) on the BARS and RLD test splits. Models trained on BARS\,+\,RLD.}
+\label{tab:e1}
+\begin{tabular}{llrrrr}
+\toprule
+ & & \multicolumn{2}{c}{BARS} & \multicolumn{2}{c}{RLD} \\
+\cmidrule(lr){3-4}\cmidrule(lr){5-6}
+Model & ep. & mAP50 & 50--95 & mAP50 & 50--95 \\
+\midrule
+YOLO11n @640 & 40 & 0.983 & 0.779 & 0.866 & 0.547 \\
+YOLO11n @640 & 30 & 0.982 & 0.789 & 0.840 & 0.526 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+RLD is markedly harder than BARS (0.547 vs.\ 0.779 mask mAP50--95 for the same model). \todo{explain: smaller runways, real footage, label quality?}
 
 \paragraph{Apparent runway size, not resolution.}
 Distance, field of view and input resolution act on the detector only through the apparent size of the runway at the network input.
