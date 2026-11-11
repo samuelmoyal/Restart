@@ -46,8 +46,9 @@ for clip in sys.argv[1:]:
             wpx = np.linalg.norm(hA[:, :2] / hA[:, 2:3] - hB[:, :2] / hB[:, 2:3], axis=1)
             for (x, y), w, ok_, (_, _, c) in zip(P, wpx, front, R):
                 if ok_ and -10 <= x < W + 10 and -10 <= y < H + 10 and np.isfinite(w):
-                    cv2.circle(glow, (int(round(x)), int(round(y))), int(np.clip(w / 30, 1, 5)), COL[c], -1, cv2.LINE_AA)
-            glow = cv2.GaussianBlur(glow, (0, 0), 2.0) * 2.5 + glow
+                    # v2 (ENRY vis30: approach bars rendered well, edge-light rows too faint): bigger, brighter points
+                    cv2.circle(glow, (int(round(x)), int(round(y))), int(np.clip(w / 15, 1, 6)), COL[c], -1, cv2.LINE_AA)
+            glow = cv2.GaussianBlur(glow, (0, 0), 2.5) * 3.5 + glow
         vw.write(np.clip(base + glow, 0, 255).astype(np.uint8)); i += 1
     vw.release()
     os.system(f"ffmpeg -loglevel error -y -i {clip}/night_vis_raw.mp4 -c:v libx264 -pix_fmt yuv420p -crf 14 {clip}/night_vis.mp4 && rm {clip}/night_vis_raw.mp4")

@@ -29,10 +29,13 @@ def writer(path):
 
 
 for spec in sys.argv[4:]:
-    ep, last, *st = spec.split(":"); last, st = int(last), int(st[0]) if st else 1; d = f"{SRC}/{ep}"
+    ep, last, *st = spec.split(":"); last = int(last); d = f"{SRC}/{ep}"
     frames = sorted(int(f.split(".")[0]) for f in os.listdir(f"{d}/images"))
-    frames = [f for f in frames if f <= last and (last - f) % st == 0][-NF:]
-    o = f"{OUT}/{ep}_{last}" + (f"s{st}" if st > 1 else ""); os.makedirs(o, exist_ok=True); (vi, ve, vm, vl), gt = [writer(f"{o}/{k}_raw.mp4") for k in ("input", "edge", "mask", "edge_light")], []
+    if st and st[0] == "a":     # <stride> = a: NF frames spread evenly over the whole episode up to <last> (fractional stride)
+        frames = [f for f in frames if f <= last]; frames = [frames[i] for i in np.round(np.linspace(0, len(frames) - 1, NF)).astype(int)]
+    else:
+        st = int(st[0]) if st else 1; frames = [f for f in frames if f <= last and (last - f) % st == 0][-NF:]
+    o = f"{OUT}/{ep}_{last}" + ("sa" if st == ["a"] else f"s{st}" if st != 1 else ""); os.makedirs(o, exist_ok=True); (vi, ve, vm, vl), gt = [writer(f"{o}/{k}_raw.mp4") for k in ("input", "edge", "mask", "edge_light")], []
     for f in frames:
         im = cv2.imread(f"{d}/images/{f:06d}.jpg"); im = cv2.resize(im, (W, H)) if im.shape[:2] != (H, W) else im
         fill_rows(im, 405, 876, 28, 58); im = cv2.inpaint(im, BOX, 3, cv2.INPAINT_TELEA)         # X-Plane static overlays: HUD text band, gaze box
