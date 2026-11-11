@@ -7,6 +7,7 @@ For each <out_dir>/<name>.mp4 (and the <name>.json arguments Cosmos writes next 
   frames.zip  - images/<name>_<i>.jpg (generated frames) + labels/<name>_<i>.txt (YOLO-seg runway polygon, clipped to the frame),
                 only for the frames whose runway can be labelled (gt.json "labelled"),
   align.csv   - per frame: distance to threshold, runway width (px), lateral shift of each long edge vs the sim frame (px), correlation,
+                ring_recall / ring_precision (edge agreement with the sim frame in a ring around the runway, see ring_fidelity),
   sheet.jpg   - sim / generated (GT in green) at 6 instants,
   summary.json.
 """
@@ -53,6 +54,21 @@ def edge_shift(a, b, p0, p1, half=8):
     return best, bs
 
 
+def ring_fidelity(a, b, q, tol=3):
+    """Scene fidelity around the runway: Canny edges of the sim frame a vs generated frame b, in a ring around the runway quad
+    (outer radius 1.5 x runway width, at least 30 px). Returns (recall, precision): share of sim edges with a generated edge within
+    tol px, and the reverse. Low precision = structures invented around the runway (a second, larger 'runway', a road)."""
+    H, W = a.shape[:2]; qi = np.round(q).astype(np.int32); rw = np.zeros((H, W), np.uint8); cv2.fillPoly(rw, [qi], 255)
+    r = int(max(30, 1.5 * np.ptp(q[:, 0]))); ring = cv2.dilate(rw, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * r + 1, 2 * r + 1)))
+    ring[cv2.dilate(rw, np.ones((5, 5), np.uint8)) > 0] = 0
+    ea, eb = (cv2.Canny(cv2.GaussianBlur(x.astype(np.uint8), (0, 0), 1.2), 40, 100) for x in (a, b))
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * tol + 1, 2 * tol + 1)); da, db = cv2.dilate(ea, k), cv2.dilate(eb, k)
+    m = ring > 0; na, nb = (ea[m] > 0).sum(), (eb[m] > 0).sum()
+    rec = float(((ea > 0) & (db > 0) & m).sum() / na) if na > 50 else None
+    pre = float(((eb > 0) & (da > 0) & m).sum() / nb) if nb > 50 else None
+    return rec, pre
+
+
 for batch, out in BATCHES.items():
     if not os.path.isdir(out): continue
     for f in sorted(os.listdir(out)):
@@ -65,7 +81,7 @@ for batch, out in BATCHES.items():
         if not gen: continue
         H, W = sim[0].shape[:2]; gen = [cv2.resize(g, (W, H)) if g.shape[:2] != (H, W) else g for g in gen]; n = min(len(sim), len(gen), len(gt))
         os.makedirs(dst, exist_ok=True); tmp = f"/content/post_tmp/{batch}_{name}"; os.makedirs(tmp, exist_ok=True)
-        rows, shifts, nlab = [], [], 0
+        rows, shifts, nlab, ring_rec, ring_pre = [], [], 0, [], []
         with zipfile.ZipFile(f"{tmp}/frames.zip", "w", zipfile.ZIP_STORED) as z:
             for i in range(n):
                 g = gt[i]; q = np.array(g["corners"]); lab = g.get("labelled", g["visible"]); r = [i, g["frame"], g["along_m"], round(float(np.ptp(q[:, 0])), 1), lab]
@@ -75,15 +91,18 @@ for batch, out in BATCHES.items():
                         ok = np.linalg.norm(p1 - p0) >= 20 and all(0 <= p[0] < W and 0 <= p[1] < H for p in (p0 + 0.15 * (p1 - p0), p0 + 0.85 * (p1 - p0)))
                         a, c = edge_shift(ga, gb, p0, p1) if ok else (None, None); r += [a, None if c is None else round(c, 3)]
                         if a is not None: shifts.append(abs(a))
+                    rf = ring_fidelity(ga, gb, q); r += [None if rf[0] is None else round(rf[0], 3), None if rf[1] is None else round(rf[1], 3)]
+                    if rf[0] is not None: ring_rec.append(rf[0])
+                    if rf[1] is not None: ring_pre.append(rf[1])
                     poly = clip_poly(list(q), W, H)
                     if poly:
                         nlab += 1; ok, b = cv2.imencode(".jpg", gen[i], [cv2.IMWRITE_JPEG_QUALITY, 92])
                         z.writestr(f"images/{name}_{i:04d}.jpg", b.tobytes())
                         z.writestr(f"labels/{name}_{i:04d}.txt", "0 " + " ".join(f"{x / W:.5f} {y / H:.5f}" for x, y in poly))
-                else: r += [None, None, None, None]
+                else: r += [None, None, None, None, None, None]
                 rows.append(r)
         with open(f"{tmp}/align.csv", "w", newline="") as fh:
-            w = csv.writer(fh); w.writerow(["i", "sim_frame", "along_m", "runway_width_px", "labelled", "shift_left_px", "corr_left", "shift_right_px", "corr_right"]); w.writerows(rows)
+            w = csv.writer(fh); w.writerow(["i", "sim_frame", "along_m", "runway_width_px", "labelled", "shift_left_px", "corr_left", "shift_right_px", "corr_right", "ring_recall", "ring_precision"]); w.writerows(rows)
         sheet = []
         for i in np.linspace(0, n - 1, 6).astype(int):
             g = gen[i].copy(); q = np.array(gt[i]["corners"])
@@ -93,11 +112,13 @@ for batch, out in BATCHES.items():
         cv2.imwrite(f"{tmp}/sheet.jpg", np.vstack(sheet), [cv2.IMWRITE_JPEG_QUALITY, 85])
         s = np.array(shifts) if shifts else np.array([np.nan])
         summary = dict(name=name, batch=batch, clip=os.path.basename(clip), frames_sim=len(sim), frames_gen=len(gen), frames_used=n, frames_labelled=nlab,
-                       shift_median_px=float(np.nanmedian(s)), shift_p90_px=float(np.nanpercentile(s, 90)), edges_off_gt2px=float(np.nanmean(s > 2)),
+                       shift_median_px=float(np.nanmedian(s)), ring_recall_median=float(np.median(ring_rec)) if ring_rec else None,
+                       ring_precision_median=float(np.median(ring_pre)) if ring_pre else None, shift_p90_px=float(np.nanpercentile(s, 90)), edges_off_gt2px=float(np.nanmean(s > 2)),
                        prompt=args.get("prompt"), style_image=args.get("image_context_path"), seed=args.get("seed"))
         for k in ("frames.zip", "align.csv", "sheet.jpg"): shutil.copy(f"{tmp}/{k}", f"{dst}/{k}")
         shutil.copy(f"{out}/{f}", f"{dst}/generated.mp4"); json.dump(args, open(f"{dst}/args.json", "w"), indent=1)
-        for k in ("input.mp4", "edge.mp4", "edge_light.mp4", "mask.mp4", "gt.json"):
+        for k in ["input.mp4", "edge.mp4", "edge_light.mp4", "edge_lights.mp4", "edge_lights2.mp4", "mask.mp4", "gt.json"] + \
+                 [os.path.basename(x) for x in __import__("glob").glob(f"{clip}/*_vis.mp4")]:
             if os.path.exists(f"{clip}/{k}"): shutil.copy(f"{clip}/{k}", f"{dst}/{k}")
         if args.get("image_context_path") and os.path.exists(args["image_context_path"]): shutil.copy(args["image_context_path"], f"{dst}/style.jpg")
         json.dump(summary, open(f"{dst}/summary.json", "w"), indent=1); shutil.rmtree(tmp)
