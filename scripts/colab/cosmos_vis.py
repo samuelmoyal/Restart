@@ -15,6 +15,10 @@ with the runway (GT quad, dilated) kept as asphalt:
 import sys, os, json, numpy as np, cv2
 
 MODE, CLIPS = sys.argv[1], sys.argv[2:]
+# "fog:<K>" sets the fog density K (default 46 = mist, the runway fades beyond ~1.5 km; 120 = dense fog) and names the
+# output fog<K>_vis.mp4 so several densities can coexist (series 2: fog K=46 at vis 0.5 looked like mist, not fog)
+OUTNAME = MODE.replace(":", "") + "_vis"
+if MODE.startswith("fog:"): os.environ["FOGK"] = MODE.split(":")[1]; MODE = "fog"
 
 
 def runway_mask(g, W, H, grow=0.15):
@@ -34,7 +38,7 @@ def horizon(g, H):
 for clip in CLIPS:
     gt = json.load(open(f"{clip}/gt.json")); cap = cv2.VideoCapture(f"{clip}/input.mp4")
     W, H = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    out = f"{clip}/{MODE}_vis"; vw = cv2.VideoWriter(f"{out}_raw.mp4", cv2.VideoWriter_fourcc(*"mp4v"), 16, (W, H)); i = 0
+    out = f"{clip}/{OUTNAME}"; vw = cv2.VideoWriter(f"{out}_raw.mp4", cv2.VideoWriter_fourcc(*"mp4v"), 16, (W, H)); i = 0
     yy = np.arange(H, dtype=np.float32)[:, None].repeat(W, 1)
     while True:
         ok, f = cap.read()

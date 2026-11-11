@@ -13,6 +13,8 @@ import sys, os, json, numpy as np, cv2
 
 N_EDGE, N_THR, APP, N_APP = 40, 14, 0.3, 12
 DARK = float(os.environ.get("DARK", 0.12))
+OUT = os.environ.get("OUT", "night_vis")
+V3 = os.environ.get("V3", "0") == "1"
 
 
 def rows():
@@ -30,7 +32,7 @@ R = rows(); UV = np.array([[a, b] for a, b, _ in R], np.float64)
 for clip in sys.argv[1:]:
     gt = json.load(open(f"{clip}/gt.json")); cap = cv2.VideoCapture(f"{clip}/input.mp4")
     W, H = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    vw = cv2.VideoWriter(f"{clip}/night_vis_raw.mp4", cv2.VideoWriter_fourcc(*"mp4v"), 16, (W, H)); i = 0
+    vw = cv2.VideoWriter(f"{clip}/{OUT}_raw.mp4", cv2.VideoWriter_fourcc(*"mp4v"), 16, (W, H)); i = 0
     while True:
         ok, f = cap.read()
         if not ok: break
@@ -44,12 +46,26 @@ for clip in sys.argv[1:]:
             h = np.c_[UV, np.ones(len(UV))] @ Hm.T; P = h[:, :2] / h[:, 2:3]; front = h[:, 2] * sgn > 1e-6
             hA = np.c_[np.zeros(len(UV)), UV[:, 1], np.ones(len(UV))] @ Hm.T; hB = np.c_[np.ones(len(UV)), UV[:, 1], np.ones(len(UV))] @ Hm.T
             wpx = np.linalg.norm(hA[:, :2] / hA[:, 2:3] - hB[:, :2] / hB[:, 2:3], axis=1)
-            for (x, y), w, ok_, (_, _, c) in zip(P, wpx, front, R):
-                if ok_ and -10 <= x < W + 10 and -10 <= y < H + 10 and np.isfinite(w):
-                    # v2 (ENRY vis30: approach bars rendered well, edge-light rows too faint): bigger, brighter points
-                    cv2.circle(glow, (int(round(x)), int(round(y))), int(np.clip(w / 15, 1, 6)), COL[c], -1, cv2.LINE_AA)
+            if not V3:
+                for (x, y), w, ok_, (_, _, c) in zip(P, wpx, front, R):
+                    if ok_ and -10 <= x < W + 10 and -10 <= y < H + 10 and np.isfinite(w):
+                        # v2 (ENRY vis30: approach bars rendered well, edge-light rows too faint): bigger, brighter points
+                        cv2.circle(glow, (int(round(x)), int(round(y))), int(np.clip(w / 15, 1, 6)), COL[c], -1, cv2.LINE_AA)
+            else:
+                # v3 (000081 sa: far away the edge rows vanish and only oversized approach blobs remain, the runway reads as
+                # a dark patch): approach bars smaller and dimmer, edge rows backed by a faint continuous string
+                for (x, y), w, ok_, (u, v, c) in zip(P, wpx, front, R):
+                    if ok_ and -10 <= x < W + 10 and -10 <= y < H + 10 and np.isfinite(w):
+                        r = np.clip(w / (25 if v < 0 else 15), 1, 5 if v < 0 else 6)
+                        col = np.array(COL[c], np.float64) * (0.6 if v < 0 else 1.0)
+                        cv2.circle(glow, (int(round(x)), int(round(y))), int(r), col.tolist(), -1, cv2.LINE_AA)
+                for u in (0.0, 1.0):                                   # faint string along each edge row
+                    e = np.array([[u, 0, 1.0], [u, 1, 1.0]]) @ Hm.T
+                    if (e[:, 2] * sgn > 1e-6).all():
+                        a, b = e[:, :2] / e[:, 2:3]
+                        cv2.line(glow, tuple(int(t) for t in a), tuple(int(t) for t in b), (110, 115, 120), 1, cv2.LINE_AA)
             glow = cv2.GaussianBlur(glow, (0, 0), 2.5) * 3.5 + glow
         vw.write(np.clip(base + glow, 0, 255).astype(np.uint8)); i += 1
     vw.release()
-    os.system(f"ffmpeg -loglevel error -y -i {clip}/night_vis_raw.mp4 -c:v libx264 -pix_fmt yuv420p -crf 14 {clip}/night_vis.mp4 && rm {clip}/night_vis_raw.mp4")
+    os.system(f"ffmpeg -loglevel error -y -i {clip}/{OUT}_raw.mp4 -c:v libx264 -pix_fmt yuv420p -crf 14 {clip}/{OUT}.mp4 && rm {clip}/{OUT}_raw.mp4")
     print(clip, i, "frames", flush=True)

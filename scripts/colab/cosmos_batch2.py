@@ -54,7 +54,8 @@ for it in ITEMS:
             "negative_prompt": NEG, "video_path": f"{d}/input.mp4", "guidance": 3, "seed": SEED,
             "edge": {"control_path": f"{d}/{EDGE}.mp4", "control_weight": CW}}
     if VIS:
-        spec["vis"] = {"control_path": f"{d}/{VIS}.mp4", "control_weight": VISW}; spec["name"] = name = name + f"_vis{int(VISW * 100)}"
+        spec["vis"] = {"control_path": f"{d}/{VIS}.mp4", "control_weight": VISW}; t = VIS.replace("night_vis", "").replace("_vis", "").replace("snow", "").replace("rain", "").replace("fog46", "").replace("fog120", "").replace("fog", "")   # variant tag, e.g. night_vis3 -> v3
+        spec["name"] = name = name + f"_vis{int(VISW * 100)}" + (f"v{t}" if t else "")
     if NSTEPS:
         spec["num_steps"] = NSTEPS; spec["name"] = name = name + f"_d{NSTEPS}"
         open(f"{SPECS}/{name}.model", "w").write("edge/distilled")
